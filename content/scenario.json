@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "title": "AFTERGLOW — 余韻の向こう側",
+  "contacts": [
+    {"id":"haru","name":"ハル","tag":"友だち","initial":"H","color":"#497964","bio":"見つけた言葉を、ここに送って。","intro":["やっとつながった。連絡ありがとう。","見つけた言葉を、ここに送って。僕の記録も、何か変わるかもしれない。"],"unlockStep":0},
+    {"id":"aoi","name":"アオイ","tag":"ファン仲間","initial":"A","color":"#9a7770","bio":"澪ちゃんのライブが好き。","intro":["ハルから聞いているよ。アオイです。","あの写真のこと、何か分かった？"],"unlockStep":1},
+    {"id":"manager","name":"水瀬 / マネージャー","tag":"AFTERGLOW STAFF","initial":"M","color":"#626d8b","bio":"星宮澪 マネージャー","intro":["星宮澪のマネージャー、水瀬です。","公演に関するお問い合わせはこちらで承ります。"],"unlockStep":2}
+  ],
+  "rules":[
+    {"id":"apple","contact":"haru","keyword":"りんご","fromStep":0,"toStep":1,"reply":"受け取ったよ。記録を更新した。アオイにもつながってみて。","image":"","invite":"aoi","schedule":{"type":"delay","minutes":60,"text":"1時間たったね。アオイの写真には、次の手がかりがある。"}},
+    {"id":"orange","contact":"haru","keyword":"みかん","fromStep":1,"toStep":2,"reply":"ありがとう。ふたつの言葉がつながった。澪のブログも更新されたみたいだ。","image":"media/clue.svg","invite":"manager","schedule":{"type":"daily","hour":19,"text":"19時になった。灯りが消える前に、掲示板の記録を見てほしい。"}},
+    {"id":"photo","contact":"aoi","keyword":"写真","fromStep":2,"toStep":3,"reply":"これが最後に撮った写真。あの夜、会場にはもうひとりいた。","image":"media/venue.png","invite":"","schedule":null},
+    {"id":"stars","contact":"manager","keyword":"星座","fromStep":3,"toStep":4,"reply":"確認しました。失われていた記録が戻りました。澪からの最後のブログをお読みください。","image":"","invite":"","schedule":null}
+  ],
+  "accounts":[
+    {"id":"mio","name":"星宮 澪","handle":"mio_official","initial":"M","color":"#b46f62","bio":"歌と、日々の小さなこと。星宮澪の公式アカウントです。","official":true},
+    {"id":"haru","name":"ハル","handle":"haru_notes","initial":"H","color":"#497964","bio":"日々のこと。気になったこと。忘れないための記録。","official":false},
+    {"id":"aoi","name":"アオイ","handle":"aoi_film","initial":"A","color":"#9a7770","bio":"フィルムと音楽。余韻を集めています。","official":false},
+    {"id":"staff","name":"AFTERGLOW STAFF","handle":"afterglow_staff","initial":"S","color":"#626d8b","bio":"星宮澪 オフィシャルインフォメーション。","official":false}
+  ],
+  "posts":[
+    {"id":"p-welcome","account":"mio","text":"おかえり。\nここは、歌い終わったあとの小さな居場所。\n次の季節も、一緒に歩いていけたら。","image":"media/mio.png","ageHours":10,"minStep":0},
+    {"id":"p-haru","account":"haru","text":"誰かに届くかわからないけれど、ここに記録を残しておく。","image":"","ageHours":24,"minStep":0},
+    {"id":"p-aoi","account":"aoi","text":"こもれびの窓から見えた空。あの夜のことは、まだちゃんと覚えてる。 #余韻ノート","image":"media/venue.png","ageHours":48,"minStep":0},
+    {"id":"p-apple","account":"haru","text":"赤い実を見つけた。止まっていた時間が、少しだけ動き出した。\n次の手がかりは、オレンジ色の実。","image":"","ageHours":0,"minStep":1},
+    {"id":"p-orange","account":"mio","text":"ふたつの言葉が、ひとつの道になった。\n今日のブログに、あの日の気持ちを少し書きました。","image":"","ageHours":0,"minStep":2},
+    {"id":"p-random","account":"staff","text":"今夜もおつかれさまでした。次回の AFTERGLOW SESSION は、会員ページからご確認いただけます。","image":"","ageHours":0,"minStep":0,"randomMinutes":[4,9]},
+    {"id":"p-last","account":"aoi","text":"写真に残らなかったものも、忘れたくない。あの灯りは、まだここにある。","image":"","ageHours":0,"minStep":3}
+  ],
+  "socialRules":[
+    {"id":"s-photo","channel":"post","keyword":"写真","account":"aoi","reply":"あの夜の写真なら、私が持っています。DMで「こもれび」と送ってください。","minStep":0},
+    {"id":"s-dm","channel":"dm","keyword":"こもれび","account":"aoi","reply":"会場はレンタルスペース「こもれび」。窓際の写真をよく見てみて。","minStep":0},
+    {"id":"s-reply","channel":"reply","keyword":"星座","account":"staff","reply":"あの曲のタイトルですね。マネージャーの水瀬にも、同じ言葉を伝えてください。","minStep":2}
+  ],
+  "threads":[
+    {"id":"live","title":"あの夜のアンコール、忘れられない","description":"AFTERGLOW SESSION の感想をゆっくり話すスレッド。","monthOffset":0,"tag":"LIVE","minStep":0,"comments":[{"id":"b1","name":"窓ぎわ","uid":"h8K4m2","text":"最後の曲、照明が落ちてからの静けさがすごくよかった。まだ余韻の中にいる。","ageHours":5,"minStep":0},{"id":"b2","name":"青い栞","uid":"a2N9s1","text":"わかる。あの一瞬だけ、会場の時計が止まったみたいだった。","ageHours":4,"minStep":0},{"id":"b3","name":"窓ぎわ","uid":"h8K4m2","text":"帰り際、スタッフの人が封筒を探していたのが気になった。オレンジ色の。","ageHours":0,"minStep":2},{"id":"b4","name":"夜の散歩","uid":"u7F3q8","text":"写真を見返してた。窓に映っているのって誰だろう？","ageHours":0,"minStep":0,"randomMinutes":[5,12]}]},
+    {"id":"photo","title":"みんなの余韻ノート / 写真の話","description":"好きな風景や、ライブの帰り道のこと。","monthOffset":0,"tag":"TALK","minStep":0,"comments":[{"id":"b5","name":"青い栞","uid":"z4A7p2","text":"こもれびの入り口の木、秋になるとすごく綺麗。次も同じ場所だといいな。","ageHours":28,"minStep":0},{"id":"b6","name":"アオイ","uid":"k9R2w5","text":"現像したら、不思議な写真が一枚だけあった。ハルにはもう連絡した。","ageHours":0,"minStep":1}]},
+    {"id":"archive","title":"はじめましての自己紹介スレッド","description":"いつから聴いていますか？","monthOffset":-1,"tag":"ARCHIVE","minStep":0,"comments":[{"id":"b7","name":"夜の散歩","uid":"y3L6m1","text":"配信で知って、初めてライブに行きました。こんなふうに歌う人がいるんだ、って。","ageHours":720,"minStep":0},{"id":"b8","name":"窓ぎわ","uid":"b4P1s8","text":"去年の小さなライブから。ここはあたたかくて、居心地がいいです。","ageHours":710,"minStep":0}]}
+  ],
+  "blogs":[
+    {"id":"small-light","title":"小さな灯りを、持ち寄って。","excerpt":"歌い終わったあとにも、残っているもの。","image":"media/mio.png","ageHours":8,"minStep":0,"body":"ライブが終わった帰り道、窓に映る自分の顔が少しだけ違って見えました。\n\nたくさんの声が聞こえた夜でした。名前を呼んでくれた人も、静かに手を振ってくれた人も、ちゃんと見えていたよ。\n\n歌は、歌っている間だけのものじゃないと思っています。家に帰って、お茶をいれて、ふと口ずさんでしまう。その小さな時間に寄り添えたらうれしい。\n\n次に会える日まで、それぞれの場所で、小さな灯りを大切にしていてね。\n\n澪"},
+    {"id":"window","title":"窓ぎわの、約束。","excerpt":"忘れていたはずの景色を思い出しました。","image":"media/venue.png","ageHours":0,"minStep":2,"body":"あの夜のことを、少しずつ思い出しています。\n\n窓ぎわに置かれていたオレンジ色の封筒。そこに書かれた短い言葉。誰かが、ずっと大切にしてくれていたんだね。\n\nりんごと、みかん。何気ないふたつの言葉が、遠い記憶につながっていました。\n\nアオイが写真を持っているそうです。もし出会えたなら、「写真」のことを聞いてみて。\n\n澪"},
+    {"id":"morning","title":"朝の余白。","excerpt":"今日はいつもより、少し早起き。","image":"media/mio.png","ageHours":0,"minStep":0,"delayMinutes":15,"body":"レッスンまでの少しの時間、散歩に出かけました。\n\n風が変わると、季節も変わる。急がなくてもいいんだな、と思えた朝です。\n\nみんなは今日、どんな空を見ていますか。\n\n澪"},
+    {"id":"afterglow","title":"余韻の向こう側で。","excerpt":"見つけてくれて、ありがとう。","image":"media/mio.png","ageHours":0,"minStep":4,"body":"失くしたと思っていた記録が、戻ってきました。\n\nひとつの言葉が、次の誰かへ届く。その繰り返しが、ここまで連れてきてくれたんだと思います。\n\n星座みたいだね。離れた場所にある小さな光が、一本の線でつながって、かたちになる。\n\n私の声を、見つけてくれてありがとう。\n\nまた、次の歌で会いましょう。\n\n澪"}
+  ],
+  "news":[{"id":"n1","title":"AFTERGLOW SESSION vol.03 開催のお知らせ","text":"次回の小さな音楽会を、レンタルスペースこもれびにて開催します。詳細は会員限定チケットページをご覧ください。","ageHours":24,"minStep":0},{"id":"n2","title":"ブログ「窓ぎわの、約束。」を公開しました","text":"澪から新しい記録が届きました。ブログページからお読みいただけます。","ageHours":0,"minStep":2}],
+  "diary":[{"id":"d1","title":"リハーサルの裏側から","text":"本番の3時間前。誰もいない会場で、澪は同じフレーズを何度も歌っていました。窓から入る光に合わせて照明を調整。小さな会場だからこそ、ひとつひとつを丁寧に。 — 水瀬","ageHours":72,"minStep":0}],
+  "events":[{"id":"ev1","title":"AFTERGLOW SESSION vol.03","place":"レンタルスペース こもれび","daysFromStart":30,"time":"18:30","price":3500,"capacity":20,"description":"歌とお話で過ごす、少人数のアコースティックライブ。","minStep":0},{"id":"ev0","title":"AFTERGLOW SESSION vol.02","place":"レンタルスペース こもれび","daysFromStart":-14,"time":"18:30","price":3000,"capacity":20,"description":"忘れられない夜の記録。","minStep":0}],
+  "management":{"password":"afterglow","recovery":"初回設定時の合言葉は、ファンクラブの名前を小文字で入力してください。","members":[{"number":"AG-0017","name":"黒瀬 蓮","birth":"1996-11-03","gender":"男性","joined":"2023-04","plan":"PREMIUM","gifts":[{"name":"花束","price":15000,"date":"2026-08-21 18:42"},{"name":"星のペンダント","price":28000,"date":"2026-09-10 20:16"}],"past":["AFTERGLOW SESSION vol.01","AFTERGLOW SESSION vol.02"],"future":["AFTERGLOW SESSION vol.03"]},{"number":"AG-0042","name":"青井 紗季","birth":"2000-05-18","gender":"女性","joined":"2024-06","plan":"STANDARD","gifts":[{"name":"応援メッセージ","price":500,"date":"2026-09-10 18:10"}],"past":["AFTERGLOW SESSION vol.02"],"future":["AFTERGLOW SESSION vol.03"]}]},
+  "recorder":{"serial":"EC-0917","password":"1900","description":"ECHO R-04 / 記録用ボイスロガー。保存された音声を一覧から選択して再生できます。記録時刻は機器の内部時計に基づきます。","tracks":[{"id":"r1","title":"REC_001 — 開場前","date":"09.17 / 17:42","file":"media/recording-1.wav","transcript":"ドアが開く音。足音が二度。誰かが机の上に封筒を置いたようだ。（演出用環境音サンプル）"},{"id":"r2","title":"REC_002 — 窓ぎわ","date":"09.17 / 18:56","file":"media/recording-2.wav","transcript":"低い空調音の向こうで、小さなチャイムが鳴る。窓が閉じられる。（演出用環境音サンプル）"},{"id":"r3","title":"REC_003 — 消灯後","date":"09.17 / 19:03","file":"media/recording-3.wav","transcript":"遠ざかる足音。短い電子音のあと、静寂が続く。（演出用環境音サンプル）"}]},
+  "venue":{"name":"こもれび","address":"東京都灯野区青葉 2-17-4（架空の所在地）","capacity":20,"hourlyPrice":3300,"description":"集まる時間に、やさしい余白を。自然光が差し込む小さなレンタルスペースです。音楽会、展示、気の合う仲間との集まりに。","closedWeekdays":[2],"reservedDays":[8,17,23]},
+  "gallery":[{"image":"media/mio.png","title":"夕暮れのポートレート"},{"image":"media/venue.png","title":"こもれび / ライブの帰り道"},{"image":"media/clue.svg","title":"余韻ノート / ふたつの言葉"}]
+}

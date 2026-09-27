@@ -1,0 +1,1 @@
+self.addEventListener('notificationclick',event=>{event.notification.close();const destination=event.notification.data?.url||self.registration.scope;event.waitUntil(clients.openWindow(destination));});

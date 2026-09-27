@@ -1,40 +1,27 @@
-# algo 謎解き連動サイト
+# algo — AFTERGLOW
 
-LINE風の「TALK」とSNS風の「murmur」。外部サービス・ビルド・依存パッケージ不要の静的サイトです。
+謎解き用の7サイト＋制作スタジオ。GitHub Pagesで動く、ビルド不要の静的アプリです。
 
-- チャット: https://blueberry1001.github.io/algo-puzzle/
-- SNS: https://blueberry1001.github.io/algo-puzzle/sns/
+**[サイト一覧・制作スタジオ](https://blueberry1001.github.io/algo-puzzle/studio/)** · **[Figma](https://www.figma.com/design/0567hLHUyQcKvHBZJKZ4EL)** · **[制作・運用ガイド](docs/authoring.md)**
 
-## 動作確認
+| サイト | 内容 |
+|---|---|
+| [TALK](https://blueberry1001.github.io/algo-puzzle/) | 3連絡先・段階返信・招待・画像・予約返信 |
+| [murmur](https://blueberry1001.github.io/algo-puzzle/sns/) | NPC投稿・検索・返信・DM・通知 |
+| [AFTER HOURS](https://blueberry1001.github.io/algo-puzzle/board/) | 月別のファン掲示板 |
+| [AFTERGLOW](https://blueberry1001.github.io/algo-puzzle/club/) | ブログ・ニュース・会員登録・会員コンテンツ |
+| [MEMBERS DESK](https://blueberry1001.github.io/algo-puzzle/management/) | 会員情報検索 |
+| [ECHO](https://blueberry1001.github.io/algo-puzzle/recorder/) | 認証付き音声アーカイブ |
+| [komorebi](https://blueberry1001.github.io/algo-puzzle/venue/) | 施設・マップ・予約カレンダー |
 
-1. 同じブラウザでチャットとSNSを開く（チャット内リンクは新しいタブで開きます）。
-2. 初期状態のSNSは1投稿。「みかん」を先に送っても変化しません。
-3. 「りんご」を送るとSNSが2投稿になります。
-4. 続けて「みかん」を送ると3投稿になります。
-5. 再読み込み・ブラウザの終了後も会話と進捗を保持します。
-6. チャット下部の「進捗をリセットする」→確認ダイアログの「リセットする」で初期化します。
+## 試す
 
-前後の空白は除去し、それ以外は完全一致。無関係なメッセージや正解の再送は会話に残りますが進行しません。会話は直近200メッセージを保存。日本語変換中のEnterは送信しません。
+ハルへ「りんご」→「みかん」。招待から追加したアオイへ「写真」、マネージャーへ「星座」。先に「みかん」を送っても進みません。制作スタジオで時間の早送り・本文編集・進捗リセット・JSON移行ができます。
 
-## 保存と連動
+進捗はLocalStorageに保存し、同じブラウザのタブ間で同期します。本文・画像・音声は仮の完成サンプルです。実際の送信・決済・施設予約は行いません。ブラウザ終了中の更新は次回起動時に反映し、閉じたままのプッシュ通知には対応しません。
 
-LocalStorageキー `algo-puzzle:haru:v1` にバージョン、段階、会話、解放時刻を保存。`storage`イベント、ページ復帰・タブ復帰で同期します。リセットはこのキーのみを更新し、同一ドメインの他サイトのデータを削除しません。保存できない環境では画面にエラーを表示し、成功したように見せません。
+## 開発・公開
 
-進捗は端末・ブラウザ・プロファイルごとです。別端末や異なるブラウザ間の共有は行いません。プライベートブラウズの終了やサイトデータ削除では進捗が消えます。2つのページは同じオリジンに置く必要があります。見た目とURLは分けていますが、別ドメインにはしていません。
+Node.js 22以降。`npm start`でローカル起動、`npm test`でテスト。mainブランチのルートをGitHub Pagesで配信します。
 
-謎解き用の架空サービスです。LINE等の公式サービスとは関係ありません。静的サイトなのでキーワードや解放後の文章はソースから確認できます。
-
-## 開発
-
-Node.js 22以降で `npm start` → http://127.0.0.1:4173 。`file://` で直接開かないでください。
-
-`npm test` で順序判定・保存・破損復旧・リセットを検証。
-
-- `assets/state.js`: キーワードと進行ルール
-- `assets/chat.js`: 会話・返信・リセット
-- `assets/social.js`: SNSの投稿本文
-- `assets/style.css`: 2サイトのデザインとレスポンシブ対応
-
-## 公開
-
-GitHub Pagesの公開元を `main` ブランチの `/` に設定。mainへpushすると自動公開されます。ビルド不要。
+設定は `content/scenario.json`。独自ドメインへはファイルをそのまま移設でき、進捗はスタジオからJSONで引き継げます。連動サイト群は同一オリジンで運用してください。詳しくは[運用ガイド](docs/authoring.md)をご覧ください。
