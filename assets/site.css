@@ -29,3 +29,4 @@ body[data-page=studio]{--accent:#30483d;--ink:#30443a;--muted:#829083;--line:#e0
 @media(max-width:760px){.club-hero h1 br{display:block}.hero-caption{display:none}}
 
 .echo-logo{color:#c2cf9f}.echo-login input::placeholder{color:#859077}.echo-login input:-webkit-autofill{-webkit-box-shadow:0 0 0 1000px #151e13 inset;-webkit-text-fill-color:#d9e0c8;caret-color:#d9e0c8}
+h1,h2{text-wrap:balance}
