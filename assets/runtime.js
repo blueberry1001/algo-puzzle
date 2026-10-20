@@ -33,7 +33,7 @@ export async function boot(){
     const fresh=initialWorld(config,world.startedAt);let changed=false;for(const [id,time] of Object.entries(fresh.randomAt))if(!(id in world.randomAt)){world.randomAt[id]=time;changed=true;}
     if(changed)localStorage.setItem(WORLD_KEY,JSON.stringify(world));
     if('serviceWorker' in navigator)navigator.serviceWorker.register(url('sw.js'),{scope:base.pathname}).catch(()=>{});
-    setInterval(()=>advance().catch(()=>{}),1000);
+    setInterval(()=>advance().catch(()=>{}),100);
     window.addEventListener('storage',e=>{if(e.key===CONFIG_KEY){location.reload();return;}if(e.key===WORLD_KEY){try{world=read();emit();}catch(err){showError(err.message);}}});
     window.addEventListener('pageshow',()=>advance().catch(()=>{}));
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)advance().catch(()=>{});});

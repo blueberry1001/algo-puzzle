@@ -6,7 +6,7 @@
 
 | サイト | 内容 |
 |---|---|
-| [TALK](https://blueberry1001.github.io/algo-puzzle/) | 3連絡先・段階返信・招待・画像・予約返信 |
+| [TALK](https://blueberry1001.github.io/algo-puzzle/) | 3連絡先・複数返信・表記ゆれ・部分一致・文字数に応じた待ち時間 |
 | [murmur](https://blueberry1001.github.io/algo-puzzle/sns/) | NPC投稿・検索・返信・DM・通知 |
 | [AFTER HOURS](https://blueberry1001.github.io/algo-puzzle/board/) | 月別のファン掲示板 |
 | [AFTERGLOW](https://blueberry1001.github.io/algo-puzzle/club/) | ブログ・ニュース・会員登録・会員コンテンツ |
@@ -25,3 +25,5 @@
 Node.js 22以降。`npm start`でローカル起動、`npm test`でテスト。mainブランチのルートをGitHub Pagesで配信します。
 
 設定は `content/scenario.json`。独自ドメインへはファイルをそのまま移設でき、進捗はスタジオからJSONで引き継げます。連動サイト群は同一オリジンで運用してください。詳しくは[運用ガイド](docs/authoring.md)をご覧ください。
+
+TALKは初回アクセス時には無言です。返信は1文字につき0.2秒、最低3秒待って届きます。制作スタジオで別表記・一致方法・複数の吹き出しを設定できます。詳しくは[返信の設定](docs/authoring.md#チャット返信の設定2026年10月更新)をご覧ください。

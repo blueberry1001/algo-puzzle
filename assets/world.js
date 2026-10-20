@@ -38,12 +38,30 @@ function addNotice(w,id,title,text,route,at) {
   if (w.notices.some(n=>n.id===id)) return;
   w.notices.unshift({id,title,text,route,at}); w.notices=w.notices.slice(0,100);
 }
+// Legacy keyword/reply fields remain readable for existing shared scenario files.
+export const ruleKeywords = r => r.keywords ?? [r.keyword];
+export const ruleReplies = r => r.replies ?? [{text:r.reply,image:r.image,invite:r.invite}];
+export function replyDelay(text) {
+  const length = [...new Intl.Segmenter('ja', {granularity:'grapheme'}).segment(text)].length;
+  return Math.max(3000, length * 200);
+}
+export function matchesRule(r, text) {
+  const mode=r.matchMode||'exact';
+  return mode==='any' || ruleKeywords(r).some(k=>mode==='contains'?text.includes(k.trim()):text===k.trim());
+}
+export function chatBusy(w) { return w.scheduled.some(t=>t.kind==='reply'&&!w.fired.includes(t.id)); }
 export function tickWorld(world,c,now) {
   const w=clone(world);
-  for(const task of w.scheduled) if(task.at<=now&&!w.fired.includes(task.id)) {
-    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,at:task.at});
+  const visited=new Set();
+  for(const task of [...w.scheduled].sort((a,b)=>a.at-b.at)) if(!w.fired.includes(task.id)&&!visited.has(task.contact)) {
+    visited.add(task.contact);
+    const last=w.messages.filter(m=>m.contact===task.contact&&m.role==='received').at(-1);
+    // Use actual delivery times: overdue replies must not arrive in a burst on reopening.
+    const due=Math.max(task.at,last?last.at+replyDelay(task.text):task.at);
+    if(due>now)continue;
+    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,invite:task.invite,at:now});
     w.fired.push(task.id);
-    addNotice(w,task.id,c.contacts.find(x=>x.id===task.contact)?.name||'TALK',task.text,`?contact=${task.contact}`,task.at);
+    addNotice(w,task.id,c.contacts.find(x=>x.id===task.contact)?.name||'TALK',task.text,`?contact=${task.contact}`,now);
   }
   for(const p of c.posts) if(p.account==='mio'&&visible(p,w,now)&&!w.fired.includes(p.id)) {
     w.fired.push(p.id);
@@ -59,11 +77,15 @@ export function chatSend(world,c,contact,text,now) {
   if(!text||!world.contacts.includes(contact)) return world;
   const w=tickWorld(world,c,now);
   w.messages.push({id:`sent-${now}-${w.messages.length}`,contact,role:'sent',text,at:now});
-  const rule=c.rules.find(r=>r.contact===contact&&r.fromStep===w.step&&r.keyword===text&&!w.fired.includes(`rule:${r.id}`));
+  if(chatBusy(w))return w;
+  const candidates=c.rules.filter(r=>r.contact===contact&&r.fromStep===w.step&&!w.fired.includes(`rule:${r.id}`));
+  const rank={exact:0,contains:1,any:2};
+  const rule=candidates.sort((a,b)=>rank[a.matchMode||'exact']-rank[b.matchMode||'exact']).find(r=>matchesRule(r,text));
   if(!rule) return w;
   w.fired.push(`rule:${rule.id}`); w.step=rule.toStep; w.steps[w.step]=now;
-  w.messages.push({id:`reply:${rule.id}`,contact,role:'received',text:rule.reply,image:rule.image,invite:rule.invite,at:now});
-  if(rule.schedule){const s=rule.schedule;w.scheduled.push({id:`scheduled:${rule.id}`,contact,text:s.text,at:s.type==='delay'?now+s.minutes*60000:nextJstHour(now,s.hour)});}
+  let at=now;
+  ruleReplies(rule).forEach((reply,i)=>{at+=replyDelay(reply.text);w.scheduled.push({id:`reply:${rule.id}:${i}`,kind:'reply',contact,...reply,at});});
+  if(rule.schedule){const s=rule.schedule;w.scheduled.push({id:`scheduled:${rule.id}`,contact,text:s.text,at:Math.max(at,s.type==='delay'?now+s.minutes*60000:nextJstHour(now,s.hour))+replyDelay(s.text)});}
   return tickWorld(w,c,now);
 }
 export function unlockContact(world,c,id) {
@@ -92,7 +114,7 @@ export function migrateLegacy(old,c,now) {
   w.messages=(old.messages||[]).filter(m=>['sent','received'].includes(m.role)&&typeof m.text==='string'&&Number.isFinite(m.at)).slice(-200).map((m,i)=>({...m,id:`legacy-${i}`,contact:'haru'}));
   for(const r of c.rules)if(r.toStep<=w.step){
     w.fired.push(`rule:${r.id}`);
-    if(r.invite)w.messages.push({id:`migration:${r.id}`,contact:r.contact,role:'received',text:r.reply,image:r.image,invite:r.invite,at:w.steps[r.toStep]});
+    ruleReplies(r).forEach((reply,i)=>{if(reply.invite)w.messages.push({id:`migration:${r.id}:${i}`,contact:r.contact,role:'received',...reply,at:w.steps[r.toStep]});});
     if(r.schedule){const s=r.schedule,at=w.steps[r.toStep];w.scheduled.push({id:`scheduled:${r.id}`,contact:r.contact,text:s.text,at:s.type==='delay'?at+s.minutes*60000:nextJstHour(at,s.hour)});}
   }
   return w;
@@ -112,7 +134,21 @@ export function validateConfig(c) {
   const step=(v,label)=>{if(!Number.isInteger(v)||v<0||v>100)err(`${label}: 段階は0〜100の整数です。`);};
   const asset=(v)=>{if(v!==undefined&&v!==''&&(typeof v!=='string'||!/^media\/[a-zA-Z0-9_./-]+$/.test(v)||v.includes('..')))err('画像・音声は media/ 内の相対パスを指定してください。');};
   if(['rules','posts','blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
-  for(const r of c.rules){text(r.keyword,'キーワード');text(r.reply,'返信');step(r.fromStep,r.id);step(r.toStep,r.id);if(r.toStep!==r.fromStep+1)err(`${r.id}: 次の段階は現在+1です。`);if((typeof r.keyword!=='string'||!r.keyword.trim()))err('キーワードは空にできません。');if(!c.contacts.some(a=>a.id===r.contact))err(`${r.id}: 連絡先が存在しません。`);if(r.invite&&!c.contacts.some(a=>a.id===r.invite))err(`${r.id}: 招待先が存在しません。`);asset(r.image);if(r.schedule){text(r.schedule.text,'予約返信');if(!['delay','daily'].includes(r.schedule.type))err('予約の種類が不正です。');if(r.schedule.type==='delay'&&(!Number.isFinite(r.schedule.minutes)||r.schedule.minutes<0))err('遅延時間は0以上です。');if(r.schedule.type==='daily'&&(!Number.isInteger(r.schedule.hour)||r.schedule.hour<0||r.schedule.hour>23))err('時刻は0〜23です。');}}
+  for(const r of c.rules){
+    const mode=r.matchMode||'exact';
+    if(!['exact','contains','any'].includes(mode))err('一致方法が不正です。');
+    const keys=ruleKeywords(r);
+    if(!Array.isArray(keys)|| (mode!=='any'&&!keys.length))err('キーワードを1つ以上指定してください。');
+    else if(mode!=='any')for(const k of keys){text(k,'キーワード');if(typeof k!=='string'||!k.trim())err('キーワードは空にできません。');}
+    const replies=ruleReplies(r);
+    if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
+    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
+    // Also reject unsafe legacy fields, even when the new fields take precedence.
+    asset(r.image);
+    step(r.fromStep,r.id);step(r.toStep,r.id);if(r.toStep!==r.fromStep+1)err(`${r.id}: 次の段階は現在+1です。`);
+    if(!c.contacts.some(a=>a.id===r.contact))err(`${r.id}: 連絡先が存在しません。`);
+    if(r.schedule){text(r.schedule.text,'予約返信');if(!['delay','daily'].includes(r.schedule.type))err('予約の種類が不正です。');if(r.schedule.type==='delay'&&(!Number.isFinite(r.schedule.minutes)||r.schedule.minutes<0))err('遅延時間は0以上です。');if(r.schedule.type==='daily'&&(!Number.isInteger(r.schedule.hour)||r.schedule.hour<0||r.schedule.hour>23))err('時刻は0〜23です。');}
+  }
   for(const a of c.contacts){text(a.name,'連絡先名');text(a.initial,'頭文字');step(a.unlockStep,a.id);if(!Array.isArray(a.intro)||!a.intro.every(x=>typeof x==='string'))err('初期メッセージが不正です。');}
   for(const a of c.accounts){text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');}
   for(const t of c.threads){text(t.title,'スレッド名');if(!Array.isArray(t.comments)){err('comments は配列です。');continue;}for(const m of t.comments){if(!m||typeof m!=='object'){err('コメントの形式が不正です。');continue;}text(m.text,'コメント');text(m.uid,'ID');text(m.name,'投稿者');}}
@@ -139,7 +175,7 @@ export function validateWorld(w) {
   if(!w.steps||typeof w.steps!=='object'||!Object.values(w.steps).every(Number.isFinite)||!w.randomAt||!Object.values(w.randomAt).every(Number.isFinite)||!w.read||typeof w.read!=='object')return false;
   if(!w.contacts.every(x=>typeof x==='string')||!w.fired.every(x=>typeof x==='string'))return false;
   for(const k of ['messages','posts','replies','dms'])if(!w[k].every(m=>m&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at)&&Math.abs(m.at)<8e15))return false;
-  if(!w.scheduled.every(m=>m&&typeof m.id==='string'&&typeof m.contact==='string'&&typeof m.text==='string'&&Number.isFinite(m.at)))return false;
+  if(!w.scheduled.every(m=>m&&typeof m.id==='string'&&typeof m.contact==='string'&&typeof m.text==='string'&&Number.isFinite(m.at)&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))&&(!m.invite||typeof m.invite==='string')&&(!m.kind||m.kind==='reply')))return false;
   if(w.member&&(!w.member.username||!w.member.number||typeof w.member.name!=='string'||typeof w.member.hash!=='string'||typeof w.member.salt!=='string'||!Number.isFinite(w.member.joined)))return false;
   if(!w.likes.every(x=>typeof x==='string')||!w.tickets.every(x=>typeof x==='string'))return false;
   if(!w.notices.every(n=>n&&typeof n.id==='string'&&typeof n.title==='string'&&typeof n.text==='string'&&typeof n.route==='string'&&!/^[a-z]+:|^\/\//i.test(n.route)&&Number.isFinite(n.at)))return false;

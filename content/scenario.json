@@ -2,15 +2,15 @@
   "version": 2,
   "title": "AFTERGLOW — 余韻の向こう側",
   "contacts": [
-    {"id":"haru","name":"ハル","tag":"友だち","initial":"H","color":"#497964","bio":"見つけた言葉を、ここに送って。","intro":["やっとつながった。連絡ありがとう。","見つけた言葉を、ここに送って。僕の記録も、何か変わるかもしれない。"],"unlockStep":0},
-    {"id":"aoi","name":"アオイ","tag":"ファン仲間","initial":"A","color":"#9a7770","bio":"澪ちゃんのライブが好き。","intro":["ハルから聞いているよ。アオイです。","あの写真のこと、何か分かった？"],"unlockStep":1},
-    {"id":"manager","name":"水瀬 / マネージャー","tag":"AFTERGLOW STAFF","initial":"M","color":"#626d8b","bio":"星宮澪 マネージャー","intro":["星宮澪のマネージャー、水瀬です。","公演に関するお問い合わせはこちらで承ります。"],"unlockStep":2}
+    {"id":"haru","name":"ハル","tag":"友だち","initial":"H","color":"#497964","bio":"見つけた言葉を、ここに送って。","intro":[],"unlockStep":0},
+    {"id":"aoi","name":"アオイ","tag":"ファン仲間","initial":"A","color":"#9a7770","bio":"澪ちゃんのライブが好き。","intro":[],"unlockStep":1},
+    {"id":"manager","name":"水瀬 / マネージャー","tag":"AFTERGLOW STAFF","initial":"M","color":"#626d8b","bio":"星宮澪 マネージャー","intro":[],"unlockStep":2}
   ],
-  "rules":[
-    {"id":"apple","contact":"haru","keyword":"りんご","fromStep":0,"toStep":1,"reply":"受け取ったよ。記録を更新した。アオイにもつながってみて。","image":"","invite":"aoi","schedule":{"type":"delay","minutes":60,"text":"1時間たったね。アオイの写真には、次の手がかりがある。"}},
-    {"id":"orange","contact":"haru","keyword":"みかん","fromStep":1,"toStep":2,"reply":"ありがとう。ふたつの言葉がつながった。澪のブログも更新されたみたいだ。","image":"media/clue.svg","invite":"manager","schedule":{"type":"daily","hour":19,"text":"19時になった。灯りが消える前に、掲示板の記録を見てほしい。"}},
-    {"id":"photo","contact":"aoi","keyword":"写真","fromStep":2,"toStep":3,"reply":"これが最後に撮った写真。あの夜、会場にはもうひとりいた。","image":"media/venue.png","invite":"","schedule":null},
-    {"id":"stars","contact":"manager","keyword":"星座","fromStep":3,"toStep":4,"reply":"確認しました。失われていた記録が戻りました。澪からの最後のブログをお読みください。","image":"","invite":"","schedule":null}
+  "rules": [
+    {"id":"apple","contact":"haru","fromStep":0,"toStep":1,"schedule":{"type":"delay","minutes":60,"text":"1時間たったね。アオイの写真には、次の手がかりがある。"},"matchMode":"exact","keywords":["りんご","リンゴ","林檎"],"replies":[{"text":"受け取ったよ。記録を更新した。","image":"","invite":""},{"text":"アオイにもつながってみて。","image":"","invite":"aoi"}]},
+    {"id":"orange","contact":"haru","fromStep":1,"toStep":2,"schedule":{"type":"daily","hour":19,"text":"19時になった。灯りが消える前に、掲示板の記録を見てほしい。"},"matchMode":"exact","keywords":["みかん","ミカン","蜜柑"],"replies":[{"text":"ありがとう。ふたつの言葉がつながった。澪のブログも更新されたみたいだ。","image":"media/clue.svg","invite":"manager"}]},
+    {"id":"photo","contact":"aoi","fromStep":2,"toStep":3,"schedule":null,"matchMode":"exact","keywords":["写真","しゃしん"],"replies":[{"text":"これが最後に撮った写真。あの夜、会場にはもうひとりいた。","image":"media/venue.png","invite":""}]},
+    {"id":"stars","contact":"manager","fromStep":3,"toStep":4,"schedule":null,"matchMode":"exact","keywords":["星座","せいざ"],"replies":[{"text":"確認しました。失われていた記録が戻りました。澪からの最後のブログをお読みください。","image":"","invite":""}]}
   ],
   "accounts":[
     {"id":"mio","name":"星宮 澪","handle":"mio_official","initial":"M","color":"#b46f62","bio":"歌と、日々の小さなこと。星宮澪の公式アカウントです。","official":true},
