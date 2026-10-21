@@ -36,3 +36,62 @@ h1,h2{text-wrap:balance}
 
 .social-header+.social-profile{background:white;padding-top:0}.social-header+.social-profile>.avatar{position:relative;margin-top:-42px}
 .booking-layout>section{min-width:0}.calendar-grid{grid-template-columns:repeat(7,minmax(0,1fr))}
+/* AFTER HOURS: a brighter fan community, scoped to the board. */
+body[data-page="board"]{background:#fff5f4;color:#502436;--line:#efccd3;--board-accent:#b52859}
+.board-shell{max-width:1120px;padding:0 48px}
+.board-shell ::selection{background:#ffd49e;color:#502436}
+.board-shell :focus-visible{outline:3px solid #b52859;outline-offset:5px}
+.board-header{height:96px;border-bottom:2px solid #efccd3}
+.board-logo{color:#9d234d;font-size:24px;letter-spacing:-.02em}
+.board-logo em{font-size:32px;font-weight:700}
+.board-header>span{font-size:11px;color:#793a51;letter-spacing:.06em}
+.board-hero{display:grid;grid-template-columns:1.25fr 1fr;align-items:center;gap:32px;padding:42px 0 38px;overflow:visible}
+.board-hero h1{font-family:'Noto Sans JP',sans-serif;font-size:44px;font-weight:800;letter-spacing:-.025em;line-height:1.5;margin:0 0 20px;text-wrap:balance}
+.board-hero h1 em{color:#b52859;font-style:normal}
+.board-hero p{font-size:15px;color:#793a51;font-weight:500}
+.board-hero-photo{position:relative;padding:10px 10px 36px;background:white;transform:rotate(3deg);box-shadow:0 8px 28px #6f26351a;margin:8px 16px 16px 0}
+.board-hero-photo img{display:block;width:100%;height:230px;object-fit:cover;object-position:65% 40%}
+.board-hero-photo>span{position:absolute;right:18px;bottom:9px;color:#ac3055;font-size:14px;letter-spacing:.08em;font-weight:700}
+.board-toolbar{padding:20px 0;border-bottom:0;gap:20px}
+.board-toolbar nav{flex-wrap:wrap}
+.board-toolbar button{background:white;border:1px solid #dfacbb;color:#75324a;font-size:13px;font-weight:600;min-height:44px}
+.board-toolbar button.active{background:#b52859;border-color:#b52859;color:white}
+.board-toolbar button:hover{background:#ffe1e8;color:#75213f}
+.board-toolbar button.active:hover{background:#952148;color:white}
+.board-toolbar>span{font-size:12px;color:#75324a;letter-spacing:0;white-space:nowrap}
+.thread-list{background:white;border:1px solid #efccd3;border-radius:18px;overflow:hidden;margin-bottom:44px}
+.thread-row{gap:22px;padding:26px 28px;border-bottom:1px solid #f0dce1}
+.thread-row:last-child{border-bottom:0}
+.thread-row:hover{background:#fff3f0}
+.thread-symbol{display:flex;align-items:center;justify-content:center;flex:0 0 52px;height:52px;background:#ffe4cf;color:#a44716;border-radius:16px}
+.thread-row:nth-child(even) .thread-symbol{background:#f7dfe9;color:#a8295c}
+.thread-tag{font-size:10px;color:#8d3154;font-weight:700;letter-spacing:.08em}
+.thread-row h2{font-size:19px;font-weight:700;line-height:1.6;color:#502436;margin:5px 0 8px}
+.thread-row p{font-size:14px;color:#765060;line-height:1.8}
+.thread-row small{font-size:12px;color:#765060}
+.thread-row>svg{color:#b52859;flex-shrink:0}
+.board-breadcrumb{margin:30px 0;color:#972b50;font-size:13px}
+.board-topic{color:#8b3553;font-size:12px;font-weight:600}
+.board-thread-title{font-family:'Noto Sans JP',sans-serif;font-size:30px;font-weight:750;line-height:1.6;letter-spacing:-.02em}
+.board-shell main>.quiet{color:#765060;font-size:14px}
+.thread-meta{border-color:#e5b9c6;color:#793a51;font-size:13px;letter-spacing:0;padding-top:22px}
+.board-comments{margin:8px 0 42px}
+.board-comment{gap:18px;padding:26px 0;border-color:#eaceD6}
+.fan-avatar{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;font-size:19px;font-weight:700;background:#f9cedb;color:#932b50}
+.fan-avatar.orange{background:#ffe1bc;color:#8a4419}.fan-avatar.violet{background:#e8def8;color:#64408e}.fan-avatar.teal{background:#d6eee5;color:#286553}
+.board-comment header{min-height:35px;gap:10px}
+.board-comment strong{font-size:15px;color:#68253e}
+.board-comment .comment-number{font:12px 'Noto Sans JP',sans-serif;color:#835166;align-self:auto}
+.board-comment code{font-size:11px;background:transparent;color:#835166;padding:0}
+.board-comment time{font-size:12px;color:#835166}
+.board-comment p{background:white;border:1px solid #efccd3;border-radius:0 18px 18px 18px;padding:20px 24px;margin:10px 0 0;font-size:15px;line-height:1.9;overflow-wrap:anywhere}
+.board-shell .site-footer{color:#793a51;padding:30px 0}
+.social-compose>div{justify-content:flex-end}
+.studio-links{margin:32px 0}
+@media(max-width:600px){
+.board-shell{padding:0 20px}.board-header{height:78px}.board-logo{font-size:18px}.board-logo em{font-size:25px}.board-header>span{font-size:9px;max-width:110px}
+.board-hero{grid-template-columns:1fr;gap:20px;padding:28px 0 18px}.board-hero h1{font-size:32px;line-height:1.5;margin-bottom:10px}.board-hero p{font-size:13px}.board-hero-photo{width:78%;margin:0 8px 16px auto;padding:8px 8px 30px}.board-hero-photo img{height:150px}.board-hero-photo>span{font-size:11px;bottom:8px}
+.board-toolbar{align-items:flex-start;gap:10px}.board-toolbar>span{font-size:10px;padding-top:15px}.board-toolbar button{font-size:12px;padding:8px 12px}.board-toolbar nav{gap:6px}
+.thread-row{padding:20px 16px;gap:12px}.thread-symbol{flex-basis:38px;height:38px;border-radius:12px}.thread-symbol svg{width:21px}.thread-row h2{font-size:16px}.thread-row p{font-size:12px}.thread-row small{font-size:11px}.thread-row small b{padding:0 5px}.thread-row>svg{width:16px}
+.board-thread-title{font-size:24px}.board-comment{gap:12px}.fan-avatar{width:36px;height:36px;flex-basis:36px;font-size:16px}.board-comment header{gap:6px}.board-comment strong{font-size:14px}.board-comment p{padding:16px;font-size:14px}.board-comment header time{font-size:11px;width:100%}
+}
