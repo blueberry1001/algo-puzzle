@@ -1,4 +1,4 @@
-import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorld,migrateLegacy } from './world.js';
+import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorld,migrateLegacy,normalizeHandles } from './world.js';
 export const base = new URL('../',import.meta.url);
 export const url = path => new URL(path,base).href;
 let config, world, defaults, listeners = new Set(), ready, queue=Promise.resolve();
@@ -25,12 +25,12 @@ export async function boot(){
   ready=(async()=>{
     const response=await fetch(url('content/scenario.json'),{cache:'no-cache'});if(!response.ok)throw new Error('シナリオの読み込みに失敗しました。再読み込みしてください。');
     defaults=await response.json();config=defaults;
-    const saved=localStorage.getItem(CONFIG_KEY);if(saved){try{const data=JSON.parse(saved);if(!validateConfig(data).length)config=data;else showError('保存された設定に問題があるため、公開中の設定で起動しました。');}catch{showError('保存された設定を読み取れません。公開中の設定で起動しました。');}}
+    const saved=localStorage.getItem(CONFIG_KEY);if(saved){try{const data=normalizeHandles(JSON.parse(saved));if(!validateConfig(data).length){config=data;localStorage.setItem(CONFIG_KEY,JSON.stringify(data));}else showError('保存された設定に問題があるため、公開中の設定で起動しました。');}catch{showError('保存された設定を読み取れません。公開中の設定で起動しました。');}}
     const errors=validateConfig(config);if(errors.length)throw new Error(errors.join('\n'));
     const raw=localStorage.getItem(WORLD_KEY);
     if(raw){try{world=read();}catch{localStorage.setItem(WORLD_KEY+':recovery',raw);world=initialWorld(config,Date.now());localStorage.setItem(WORLD_KEY,JSON.stringify(world));showError('保存データの形式に問題があったため初期状態で起動しました。元データは recovery キーに保管しています。バックアップは制作スタジオから復元できます。');}}else{let legacy;try{legacy=JSON.parse(localStorage.getItem('algo-puzzle:haru:v1'));}catch{}world=migrateLegacy(legacy,config,Date.now());localStorage.setItem(WORLD_KEY,JSON.stringify(world));}
     // Make new scheduled content deterministic after a scenario revision.
-    const fresh=initialWorld(config,world.startedAt);let changed=false;for(const [id,time] of Object.entries(fresh.randomAt))if(!(id in world.randomAt)){world.randomAt[id]=time;changed=true;}
+    const fresh=initialWorld(config,world.startedAt);let changed=false;if(!world.playerHandle){world.playerHandle=fresh.playerHandle;changed=true;}for(const [id,time] of Object.entries(fresh.randomAt))if(!(id in world.randomAt)){world.randomAt[id]=time;changed=true;}
     if(changed)localStorage.setItem(WORLD_KEY,JSON.stringify(world));
     if('serviceWorker' in navigator)navigator.serviceWorker.register(url('sw.js'),{scope:base.pathname}).catch(()=>{});
     setInterval(()=>advance().catch(()=>{}),100);
@@ -53,7 +53,7 @@ export function transact(change){
 }
 export function advance(){return transact((w,c,n)=>tickWorld(w,c,n));}
 export async function reset(){return transact((w,c)=>initialWorld(c,Date.now()));}
-export async function setConfig(next){const errors=validateConfig(next);if(errors.length)throw new Error(errors.join('\n'));localStorage.setItem(CONFIG_KEY,JSON.stringify(next));config=next;await transact((w)=>{const fresh=initialWorld(config,w.startedAt);for(const [id,t] of Object.entries(fresh.randomAt))if(!(id in w.randomAt))w.randomAt[id]=t;return w;});}
+export async function setConfig(next){if(JSON.stringify(next).length>2000000)throw new Error('設定全体は2MB以内にしてください。画像を小さくしてください。');const errors=validateConfig(next);if(errors.length)throw new Error(errors.join('\n'));localStorage.setItem(CONFIG_KEY,JSON.stringify(next));config=next;await transact((w)=>{const fresh=initialWorld(config,w.startedAt);for(const [id,t] of Object.entries(fresh.randomAt))if(!(id in w.randomAt))w.randomAt[id]=t;return w;});}
 export async function restoreConfig(){localStorage.removeItem(CONFIG_KEY);config=structuredClone(defaults);}
 export async function requestNotifications(){if(!('Notification' in window))return 'このブラウザは通知に対応していません。サイト内通知をご利用ください。';const result=await Notification.requestPermission();return result==='granted'?'ブラウザ通知を有効にしました。サイトを開いている間の更新をお知らせします。':result==='denied'?'通知は許可されていません。サイト内通知は引き続き利用できます。':'通知の設定は変更されませんでした。';}
 export function download(name,data){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);}
