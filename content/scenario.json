@@ -31,6 +31,16 @@
       "bio": "星宮澪 マネージャー",
       "intro": [],
       "unlockStep": 2
+    },
+    {
+      "id": "mio",
+      "name": "星宮 澪",
+      "initial": "M",
+      "color": "#b46f62",
+      "tag": "アーティスト",
+      "bio": "星宮澪です。",
+      "unlockStep": 0,
+      "intro": []
     }
   ],
   "rules": [
@@ -237,6 +247,16 @@
       "image": "",
       "ageHours": 0,
       "minStep": 3
+    },
+    {
+      "id": "p-staff-reply",
+      "account": "staff",
+      "replyTo": "p-welcome",
+      "text": "こちらでもライブ情報をお知らせします！",
+      "minStep": 0,
+      "delaySeconds": 0,
+      "ageHours": 0,
+      "image": ""
     }
   ],
   "socialRules": [
@@ -267,6 +287,16 @@
       "minStep": 2,
       "name": "星座のリプライに反応",
       "targetPost": "p-orange"
+    },
+    {
+      "id": "s-mio-invite",
+      "name": "澪の連絡先を送る",
+      "channel": "dm",
+      "account": "mio",
+      "keyword": "連絡先",
+      "reply": "こちらからTALKに追加してください。",
+      "invite": "mio",
+      "minStep": 0
     }
   ],
   "threads": [

@@ -18,9 +18,9 @@ export function itemTime(item, w) {
   if (item.randomMinutes) return w.randomAt[item.id] ?? Infinity;
   const start = item.publishMode!=='time' && item.minStep > 0 ? w.steps[item.minStep] : w.startedAt;
   if (start === undefined) return Infinity;
-  return start + (item.delayMinutes || 0)*60000 - (item.ageHours || 0)*HOUR;
+  return start + (item.delaySeconds ?? (item.delayMinutes || 0)*60)*1000 - (item.ageHours || 0)*HOUR;
 }
-export function visible(item,w,now=Date.now()+w.offset) { return (item.publishMode==='time'||w.step >= (item.minStep||0)) && itemTime(item,w) <= now; }
+export function visible(item,w,now=Date.now()+w.offset) { return !(item.deleteAtStep!=null&&(w.step>=item.deleteAtStep||w.fired.includes(`deleted:${item.id}`))) && (item.publishMode==='time'||w.step >= (item.minStep||0)) && itemTime(item,w) <= now; }
 export function relativeTime(time, now=Date.now()) {
   const seconds = Math.max(0,Math.floor((now-time)/1000));
   if (seconds < 60) return 'たった今';
@@ -49,12 +49,22 @@ export function replyDelay(text) {
 }
 export function matchesRule(r, text) {
   const mode=r.matchMode||'exact';
+  if((r.excludeKeywords||[]).some(k=>text.includes(k.trim())))return false;
+  if(mode==='allContains')return ruleKeywords(r).every(k=>text.includes(k.trim()));
   if(mode==='notContains')return !ruleKeywords(r).some(k=>text.includes(k.trim()));
   return ['any','fallback'].includes(mode) || ruleKeywords(r).some(k=>mode==='contains'?text.includes(k.trim()):text===k.trim());
 }
 export function chatBusy(w) { return w.scheduled.some(t=>t.kind==='reply'&&!w.fired.includes(t.id)); }
 export function tickWorld(world,c,now) {
   const w=clone(world);
+  w.pendingDms ||= [];
+  for(const task of w.pendingDms.filter(t=>t.at<=now)) {
+    w.dms.push({...task,at:now});
+    addNotice(w,task.id,c.accounts.find(a=>a.id===task.account)?.name||'murmur',task.text,`sns/?view=dm&account=${task.target}`,now);
+  }
+  w.pendingDms=w.pendingDms.filter(t=>t.at>now);
+  w.dms=w.dms.slice(-500);
+  for(const p of c.posts)if(p.deleteAtStep!=null&&w.step>=p.deleteAtStep&&!w.fired.includes(`deleted:${p.id}`))w.fired.push(`deleted:${p.id}`);
   const visited=new Set();
   for(const task of [...w.scheduled].sort((a,b)=>a.at-b.at)) if(!w.fired.includes(task.id)&&!visited.has(task.contact)) {
     visited.add(task.contact);
@@ -82,7 +92,7 @@ export function chatSend(world,c,contact,text,now) {
   w.messages.push({id:`sent-${now}-${w.messages.length}`,contact,role:'sent',text,at:now});
   if(chatBusy(w))return w;
   const candidates=c.rules.filter(r=>r.contact===contact&&r.fromStep===w.step);
-  const rank={exact:0,contains:1,notContains:2,any:3,fallback:4};
+  const rank={exact:0,allContains:1,contains:2,notContains:3,any:4,fallback:5};
   const rule=candidates.sort((a,b)=>rank[a.matchMode||'exact']-rank[b.matchMode||'exact']).find(r=>matchesRule(r,text));
   if(!rule) return w;
   const repeat=w.scheduled.filter(t=>t.kind==='reply'&&t.id.startsWith(`reply:${rule.id}:`)).length;
@@ -96,7 +106,7 @@ export function chatSend(world,c,contact,text,now) {
 }
 export function unlockContact(world,c,id) {
   const contact=c.contacts.find(x=>x.id===id);
-  if(!contact||world.step<contact.unlockStep) return world;
+  if(!contact||(world.step<contact.unlockStep&&!world.dms.some(m=>m.account!=='player'&&m.invite===id))) return world;
   const w=clone(world);if(!w.contacts.includes(id))w.contacts.push(id);return w;
 }
 export function socialSend(world,c,channel,text,target,now) {
@@ -109,7 +119,7 @@ export function socialSend(world,c,channel,text,target,now) {
   if(channel==='reply')w.replies.push(record);
   if(channel==='dm')w.dms.push(record);
   const rules=c.socialRules.filter(r=>r.channel===channel&&w.step>=r.minStep&&text.includes(r.keyword)&&(channel!=='dm'||r.account===target)&&(channel!=='reply'||!r.targetPost||r.targetPost===target));
-  for(const r of rules){const response={id:`${id}:${r.id}`,text:r.reply,at:now+1,account:r.account,target:channel==='post'?id:target};if(channel==='dm')w.dms.push(response);else w.replies.push(response);addNotice(w,response.id,c.accounts.find(a=>a.id===r.account).name,r.reply,channel==='dm'?`sns/?view=dm&account=${target}`:`sns/?view=post&id=${channel==='post'?id:target}`,now);}
+  for(const r of rules){const response={id:`${id}:${r.id}`,text:r.reply,invite:r.invite||'',at:channel==='dm'?now+10000:now,account:r.account,target:channel==='post'?id:target};if(channel==='dm'){(w.pendingDms ||= []).push(response);continue;}else w.replies.push(response);addNotice(w,response.id,c.accounts.find(a=>a.id===r.account).name,r.reply,channel==='dm'?`sns/?view=dm&account=${target}`:`sns/?view=post&id=${channel==='post'?id:target}`,now);}
   w.posts=w.posts.slice(0,200);w.replies=w.replies.slice(-500);w.dms=w.dms.slice(-500);return w;
 }
 export function migrateLegacy(old,c,now) {
@@ -145,10 +155,11 @@ export function validateConfig(c) {
   if(['rules','posts','blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
   for(const r of c.rules){
     const mode=r.matchMode||'exact';
-    if(!['exact','contains','notContains','any','fallback'].includes(mode))err('一致方法が不正です。');
+    if(!['exact','contains','allContains','notContains','any','fallback'].includes(mode))err('一致方法が不正です。');
     const keys=ruleKeywords(r);
     if(!Array.isArray(keys)|| (!['any','fallback'].includes(mode)&&!keys.length))err('キーワードを1つ以上指定してください。');
     else if(!['any','fallback'].includes(mode))for(const k of keys){text(k,'キーワード');if(typeof k!=='string'||!k.trim())err('キーワードは空にできません。');}
+    if(r.excludeKeywords!==undefined&&(!Array.isArray(r.excludeKeywords)||!r.excludeKeywords.every(k=>typeof k==='string'&&k.trim()&&k.length<=1000)))err('除外キーワードが不正です。');
     const replies=ruleReplies(r);
     if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
     else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
@@ -162,12 +173,12 @@ export function validateConfig(c) {
   const handles=new Set();
   for(const a of c.accounts){if(!/^[A-Za-z0-9]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
   for(const t of c.threads){text(t.title,'スレッド名');if(!Array.isArray(t.comments)){err('comments は配列です。');continue;}for(const m of t.comments){if(!m||typeof m!=='object'){err('コメントの形式が不正です。');continue;}text(m.text,'コメント');text(m.uid,'ID');text(m.name,'投稿者');}}
-  for(const p of c.posts){text(p.text,'投稿');if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
+  for(const p of c.posts){text(p.text,'投稿');if(p.replyTo&&!c.posts.some(parent=>parent.id===p.replyTo&&!parent.replyTo&&parent.id!==p.id))err('返信対象は通常の投稿を指定してください。');if(p.deleteAtStep!=null)step(p.deleteAtStep,p.id);if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
   for(const b of c.blogs){text(b.title,'ブログタイトル');text(b.body,'ブログ本文');text(b.excerpt,'ブログ概要');}
   for(const b of [...c.news,...c.diary]){text(b.title,'記事タイトル');text(b.text,'記事本文');}
-  for(const r of c.socialRules){if(!['post','reply','dm'].includes(r.channel))err('SNS返信先が不正です。');text(r.keyword,'SNSキーワード');text(r.reply,'SNS返信');if((typeof r.keyword!=='string'||!r.keyword.trim()))err('SNSキーワードは空にできません。');if(!c.accounts.some(a=>a.id===r.account))err('SNS返信アカウントが存在しません。');step(r.minStep,r.id);if(r.targetPost&&!c.posts.some(p=>p.id===r.targetPost))err('返信対象ポストが存在しません。');}
+  for(const r of c.socialRules){if(!['post','reply','dm'].includes(r.channel))err('SNS返信先が不正です。');text(r.keyword,'SNSキーワード');text(r.reply,'SNS返信');if((typeof r.keyword!=='string'||!r.keyword.trim()))err('SNSキーワードは空にできません。');if(!c.accounts.some(a=>a.id===r.account))err('SNS返信アカウントが存在しません。');if(r.invite&&!c.contacts.some(a=>a.id===r.invite))err('DMの招待先が存在しません。');step(r.minStep,r.id);if(r.targetPost&&!c.posts.some(p=>p.id===r.targetPost))err('返信対象ポストが存在しません。');}
   if(errors.length)return errors;
-  for(const item of allItems(c)){if(ids.has(item.id))err(`公開記事IDが重複: ${item.id}`);ids.add(item.id);step(item.minStep,item.id);if(item.publishMode&&!['time','progress'].includes(item.publishMode))err('公開方法が不正です。');asset(item.image);if(item.ageHours!==undefined&&(!Number.isFinite(item.ageHours)||item.ageHours<0))err('ageHoursは0以上です。');if(item.delayMinutes!==undefined&&(!Number.isFinite(item.delayMinutes)||item.delayMinutes<0))err('delayMinutesは0以上です。');if(item.randomMinutes&&(!Array.isArray(item.randomMinutes)||item.randomMinutes.length!==2||!item.randomMinutes.every(Number.isFinite)||item.randomMinutes[0]<0||item.randomMinutes[1]<item.randomMinutes[0]))err('randomMinutes は [最短分, 最長分] です。');}
+  for(const item of allItems(c)){if(ids.has(item.id))err(`公開記事IDが重複: ${item.id}`);ids.add(item.id);step(item.minStep,item.id);if(item.publishMode&&!['time','progress'].includes(item.publishMode))err('公開方法が不正です。');asset(item.image);if(item.delaySeconds!==undefined&&(!Number.isFinite(item.delaySeconds)||item.delaySeconds<0))err('公開までの秒数は0以上です。');if(item.ageHours!==undefined&&(!Number.isFinite(item.ageHours)||item.ageHours<0))err('ageHoursは0以上です。');if(item.delayMinutes!==undefined&&(!Number.isFinite(item.delayMinutes)||item.delayMinutes<0))err('delayMinutesは0以上です。');if(item.randomMinutes&&(!Array.isArray(item.randomMinutes)||item.randomMinutes.length!==2||!item.randomMinutes.every(Number.isFinite)||item.randomMinutes[0]<0||item.randomMinutes[1]<item.randomMinutes[0]))err('randomMinutes は [最短分, 最長分] です。');}
   if(!c.management||typeof c.management.password!=='string'||!c.management.password||!Array.isArray(c.management.members))err('管理画面の設定が不正です。');
   if(!c.recorder||!c.recorder.serial||!c.recorder.password||!Array.isArray(c.recorder.tracks))err('音声サイトの設定が不正です。');else for(const t of c.recorder.tracks)asset(t?.file);
   if(!c.venue||!Array.isArray(c.venue.closedWeekdays)||!Array.isArray(c.venue.reservedDays))err('施設設定が不正です。');
@@ -183,6 +194,7 @@ export function validateWorld(w) {
   if(!w||w.version!==2||!Number.isFinite(w.startedAt)||Math.abs(w.startedAt)>8e15||!Number.isInteger(w.step)||w.step<0||w.step>100||!Number.isFinite(w.offset)||Math.abs(w.offset)>31536000000)return false;
   for(const k of ['contacts','messages','scheduled','fired','posts','replies','dms','likes','notices','tickets','inquiries','reservations'])if(!Array.isArray(w[k])||w[k].length>5000)return false;
   if(!w.steps||typeof w.steps!=='object'||!Object.values(w.steps).every(Number.isFinite)||!w.randomAt||!Object.values(w.randomAt).every(Number.isFinite)||!w.read||typeof w.read!=='object')return false;
+  if(w.pendingDms!==undefined&&(!Array.isArray(w.pendingDms)||w.pendingDms.length>5000||!w.pendingDms.every(m=>m&&typeof m.id==='string'&&typeof m.text==='string'&&typeof m.account==='string'&&typeof m.target==='string'&&Number.isFinite(m.at)&&(!m.invite||typeof m.invite==='string'))))return false;
   if(!w.contacts.every(x=>typeof x==='string')||!w.fired.every(x=>typeof x==='string'))return false;
   for(const k of ['messages','posts','replies','dms'])if(!w[k].every(m=>m&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at)&&Math.abs(m.at)<8e15))return false;
   if(!w.scheduled.every(m=>m&&typeof m.id==='string'&&typeof m.contact==='string'&&typeof m.text==='string'&&Number.isFinite(m.at)&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))&&(!m.invite||typeof m.invite==='string')&&(!m.kind||m.kind==='reply')))return false;
@@ -193,4 +205,12 @@ export function validateWorld(w) {
   if(!w.inquiries.every(r=>r&&typeof r.text==='string'&&typeof r.name==='string'&&Number.isFinite(r.at)))return false;
   if(!w.messages.every(m=>['sent','received'].includes(m.role)&&typeof m.contact==='string'&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))))return false;
   return true;
+}
+
+export function hashtags(text) { return [...text.matchAll(/[#＃]([\p{L}\p{N}\p{M}_]+)/gu)].map(m=>m[1].normalize('NFKC').toLocaleLowerCase()); }
+export function shareAccount(world,c,contact,account,now) {
+ const a=c.accounts.find(a=>a.id===account);if(!a||!world.contacts.includes(contact))return world;
+ const w=chatSend(world,c,contact,`@${a.handle}`,now);
+ const sent=w.messages.findLast(m=>m.role==='sent'&&m.contact===contact);
+ if(sent)sent.sharedAccount=account;return w;
 }
