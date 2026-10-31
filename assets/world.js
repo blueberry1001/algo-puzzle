@@ -30,6 +30,9 @@ export function relativeTime(time, now=Date.now()) {
   if (seconds < 31536000) return `${Math.floor(seconds/2592000)}カ月前`;
   return `${Math.floor(seconds/31536000)}年前`;
 }
+export function tomorrowJstHour(now,hour) {
+ const d=new Date(now+9*HOUR);return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()+1,hour)-9*HOUR;
+}
 export function nextJstHour(now, hour) {
   const d = new Date(now + 9*HOUR);
   let due = Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),hour)-9*HOUR;
@@ -45,16 +48,19 @@ export const ruleKeywords = r => r.keywords ?? [r.keyword];
 export const ruleReplies = r => r.replies ?? [{text:r.reply,image:r.image,invite:r.invite}];
 export function replyDelay(text) {
   const length = [...new Intl.Segmenter('ja', {granularity:'grapheme'}).segment(text)].length;
-  return Math.max(3000, length * 200);
+  return 1000 + length * 100;
 }
-export function matchesRule(r, text) {
+export function matchesRule(r, text, sharedAccount) {
   const mode=r.matchMode||'exact';
+  if(mode==='sharedAccount')return !!sharedAccount&&r.sharedAccount===sharedAccount;
+  if(mode==='groups')return [r.keywords,r.keywordsB].every(group=>group?.some(k=>text.includes(k.trim())))&&!(r.excludeKeywords||[]).some(k=>text.includes(k.trim()));
   if((r.excludeKeywords||[]).some(k=>text.includes(k.trim())))return false;
   if(mode==='allContains')return ruleKeywords(r).every(k=>text.includes(k.trim()));
   if(mode==='notContains')return !ruleKeywords(r).some(k=>text.includes(k.trim()));
-  return ['any','fallback'].includes(mode) || ruleKeywords(r).some(k=>mode==='contains'?text.includes(k.trim()):text===k.trim());
+  return ['any','fallback','sharedAccount'].includes(mode) || ruleKeywords(r).some(k=>mode==='contains'?text.includes(k.trim()):text===k.trim());
 }
-export function chatBusy(w) { return w.scheduled.some(t=>t.kind==='reply'&&!w.fired.includes(t.id)); }
+export function pendingTyping(w,now=Date.now()+(w.offset||0)) {return w.scheduled.find(t=>!w.fired.includes(t.id)&&(t.kind==='reply'||now>=t.at-replyDelay(t.text)));}
+export function chatBusy(w,now) { return !!pendingTyping(w,now); }
 export function tickWorld(world,c,now) {
   const w=clone(world);
   w.pendingDms ||= [];
@@ -65,6 +71,7 @@ export function tickWorld(world,c,now) {
   w.pendingDms=w.pendingDms.filter(t=>t.at>now);
   w.dms=w.dms.slice(-500);
   for(const p of c.posts)if(p.deleteAtStep!=null&&w.step>=p.deleteAtStep&&!w.fired.includes(`deleted:${p.id}`))w.fired.push(`deleted:${p.id}`);
+  for(const t of w.scheduled)if(!w.fired.includes(t.id)&&now>=t.at-replyDelay(t.text)&&!w.fired.includes(`typing:${t.id}`))w.fired.push(`typing:${t.id}`);
   const visited=new Set();
   for(const task of [...w.scheduled].sort((a,b)=>a.at-b.at)) if(!w.fired.includes(task.id)&&!visited.has(task.contact)) {
     visited.add(task.contact);
@@ -76,7 +83,7 @@ export function tickWorld(world,c,now) {
     w.fired.push(task.id);
     addNotice(w,task.id,c.contacts.find(x=>x.id===task.contact)?.name||'TALK',task.text,`?contact=${task.contact}`,now);
   }
-  for(const p of c.posts) if(p.account==='mio'&&visible(p,w,now)&&!w.fired.includes(p.id)) {
+  for(const p of c.posts) if(p.account==='mio'&&!c.accounts.find(a=>a.id===p.account)?.searchOnly&&visible(p,w,now)&&!w.fired.includes(p.id)) {
     w.fired.push(p.id);
     if(itemTime(p,w)>=w.startedAt) addNotice(w,p.id,'星宮 澪が投稿しました',p.text,'sns/',itemTime(p,w));
   }
@@ -85,15 +92,15 @@ export function tickWorld(world,c,now) {
   w.messages=w.messages.slice(-500);
   return w;
 }
-export function chatSend(world,c,contact,text,now) {
+export function chatSend(world,c,contact,text,now,sharedAccount) {
   text=text.trim().slice(0,1000);
   if(!text||!world.contacts.includes(contact)) return world;
   const w=tickWorld(world,c,now);
-  w.messages.push({id:`sent-${now}-${w.messages.length}`,contact,role:'sent',text,at:now});
-  if(chatBusy(w))return w;
+  if(chatBusy(w,now))return w;
+  w.messages.push({id:`sent-${now}-${w.messages.length}`,contact,role:'sent',text,at:now,...(sharedAccount?{sharedAccount}:{})});
   const candidates=c.rules.filter(r=>r.contact===contact&&r.fromStep===w.step);
-  const rank={exact:0,allContains:1,contains:2,notContains:3,any:4,fallback:5};
-  const rule=candidates.sort((a,b)=>rank[a.matchMode||'exact']-rank[b.matchMode||'exact']).find(r=>matchesRule(r,text));
+  const rank={sharedAccount:-1,groups:0,exact:0,allContains:1,contains:2,notContains:3,any:4,fallback:5};
+  const rule=candidates.sort((a,b)=>rank[a.matchMode||'exact']-rank[b.matchMode||'exact']).find(r=>matchesRule(r,text,sharedAccount));
   if(!rule) return w;
   const repeat=w.scheduled.filter(t=>t.kind==='reply'&&t.id.startsWith(`reply:${rule.id}:`)).length;
   const suffix=repeat||w.fired.includes(`rule:${rule.id}`)?`:${crypto.randomUUID()}`:'';
@@ -101,7 +108,7 @@ export function chatSend(world,c,contact,text,now) {
   if(w.step!==rule.toStep){w.step=rule.toStep;w.steps[w.step]=now;}
   let at=now;
   ruleReplies(rule).forEach((reply,i)=>{at+=replyDelay(reply.text);w.scheduled.push({id:`reply:${rule.id}:${i}${suffix}`,kind:'reply',contact,...reply,at});});
-  if(rule.schedule){const s=rule.schedule;w.scheduled.push({id:`scheduled:${rule.id}${suffix}`,contact,text:s.text,at:Math.max(at,s.type==='delay'?now+(s.seconds??s.minutes*60)*1000:nextJstHour(now,s.hour))+replyDelay(s.text)});}
+  if(rule.schedule){const s=rule.schedule;w.scheduled.push({id:`scheduled:${rule.id}${suffix}`,contact,text:s.text,at:Math.max(at,s.type==='delay'?now+(s.seconds??s.minutes*60)*1000:s.type==='tomorrow'?tomorrowJstHour(now,s.hour):nextJstHour(now,s.hour))+(s.type==='tomorrow'?0:replyDelay(s.text))});}
   return tickWorld(w,c,now);
 }
 export function unlockContact(world,c,id) {
@@ -119,7 +126,7 @@ export function socialSend(world,c,channel,text,target,now) {
   if(channel==='reply')w.replies.push(record);
   if(channel==='dm')w.dms.push(record);
   const rules=c.socialRules.filter(r=>r.channel===channel&&w.step>=r.minStep&&text.includes(r.keyword)&&(channel!=='dm'||r.account===target)&&(channel!=='reply'||!r.targetPost||r.targetPost===target));
-  for(const r of rules){const response={id:`${id}:${r.id}`,text:r.reply,invite:r.invite||'',at:channel==='dm'?now+10000:now,account:r.account,target:channel==='post'?id:target};if(channel==='dm'){(w.pendingDms ||= []).push(response);continue;}else w.replies.push(response);addNotice(w,response.id,c.accounts.find(a=>a.id===r.account).name,r.reply,channel==='dm'?`sns/?view=dm&account=${target}`:`sns/?view=post&id=${channel==='post'?id:target}`,now);}
+  for(const r of rules){const response={id:`${id}:${r.id}`,text:r.reply,invite:r.invite||'',at:channel==='dm'?now+10000:now,account:r.account,target:channel==='post'?id:target};if(channel==='dm'){(w.pendingDms ||= []).push(response);continue;}else w.replies.push(response);if(c.accounts.find(a=>a.id===r.account)?.searchOnly)continue;addNotice(w,response.id,c.accounts.find(a=>a.id===r.account).name,r.reply,channel==='dm'?`sns/?view=dm&account=${target}`:`sns/?view=post&id=${channel==='post'?id:target}`,now);}
   w.posts=w.posts.slice(0,200);w.replies=w.replies.slice(-500);w.dms=w.dms.slice(-500);return w;
 }
 export function migrateLegacy(old,c,now) {
@@ -136,7 +143,7 @@ export function migrateLegacy(old,c,now) {
   return w;
 }
 export function normalizeHandles(c){
- const seen=new Set();for(const a of c.accounts||[]){if(!a||typeof a!=='object')continue;if(!/^[A-Za-z0-9]{6,16}$/.test(a.handle)||seen.has(a.handle.toLowerCase()))a.handle=randomHandle();seen.add(a.handle.toLowerCase());}return c;
+ const seen=new Set();for(const a of c.accounts||[]){if(!a||typeof a!=='object')continue;if(!/^[A-Za-z0-9_]{6,16}$/.test(a.handle)||seen.has(a.handle.toLowerCase()))a.handle=randomHandle();seen.add(a.handle.toLowerCase());}return c;
 }
 export function validateConfig(c) {
   const errors=[]; const err=s=>errors.push(s);
@@ -155,11 +162,13 @@ export function validateConfig(c) {
   if(['rules','posts','blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
   for(const r of c.rules){
     const mode=r.matchMode||'exact';
-    if(!['exact','contains','allContains','notContains','any','fallback'].includes(mode))err('一致方法が不正です。');
+    if(!['exact','contains','allContains','notContains','any','fallback','groups','sharedAccount'].includes(mode))err('一致方法が不正です。');
     const keys=ruleKeywords(r);
-    if(!Array.isArray(keys)|| (!['any','fallback'].includes(mode)&&!keys.length))err('キーワードを1つ以上指定してください。');
-    else if(!['any','fallback'].includes(mode))for(const k of keys){text(k,'キーワード');if(typeof k!=='string'||!k.trim())err('キーワードは空にできません。');}
+    if(!Array.isArray(keys)|| (!['any','fallback','sharedAccount'].includes(mode)&&!keys.length))err('キーワードを1つ以上指定してください。');
+    else if(!['any','fallback','sharedAccount'].includes(mode))for(const k of keys){text(k,'キーワード');if(typeof k!=='string'||!k.trim())err('キーワードは空にできません。');}
     if(r.excludeKeywords!==undefined&&(!Array.isArray(r.excludeKeywords)||!r.excludeKeywords.every(k=>typeof k==='string'&&k.trim()&&k.length<=1000)))err('除外キーワードが不正です。');
+    if(mode==='groups'&&(!Array.isArray(r.keywordsB)||!r.keywordsB.length||!r.keywordsB.every(k=>typeof k==='string'&&k.trim()&&k.length<=1000)))err('キーワード群Bを入力してください。');
+    if(mode==='sharedAccount'&&!c.accounts.some(a=>a.id===r.sharedAccount))err('共有対象のアカウントを選択してください。');
     const replies=ruleReplies(r);
     if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
     else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
@@ -167,13 +176,13 @@ export function validateConfig(c) {
     asset(r.image);
     step(r.fromStep,r.id);step(r.toStep,r.id);if(r.name!==undefined)text(r.name,'ルール名');
     if(!c.contacts.some(a=>a.id===r.contact))err(`${r.id}: 連絡先が存在しません。`);
-    if(r.schedule){text(r.schedule.text,'予約返信');if(!['delay','daily'].includes(r.schedule.type))err('予約の種類が不正です。');if(r.schedule.type==='delay'&&(!Number.isFinite(r.schedule.seconds??r.schedule.minutes*60)||(r.schedule.seconds??r.schedule.minutes*60)<0))err('遅延時間は0以上です。');if(r.schedule.type==='daily'&&(!Number.isInteger(r.schedule.hour)||r.schedule.hour<0||r.schedule.hour>23))err('時刻は0〜23です。');}
+    if(r.schedule){text(r.schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(r.schedule.type))err('予約の種類が不正です。');if(r.schedule.type==='delay'&&(!Number.isFinite(r.schedule.seconds??r.schedule.minutes*60)||(r.schedule.seconds??r.schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(r.schedule.type)&&(!Number.isInteger(r.schedule.hour)||r.schedule.hour<0||r.schedule.hour>23))err('時刻は0〜23です。');}
   }
   for(const a of c.contacts){text(a.name,'連絡先名');text(a.initial,'頭文字');step(a.unlockStep,a.id);if(!Array.isArray(a.intro)||!a.intro.every(x=>typeof x==='string'))err('初期メッセージが不正です。');}
   const handles=new Set();
-  for(const a of c.accounts){if(!/^[A-Za-z0-9]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
+  for(const a of c.accounts){if(a.searchOnly!==undefined&&typeof a.searchOnly!=='boolean')err('検索限定の設定が不正です。');if(!/^[A-Za-z0-9_]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字・_の6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
   for(const t of c.threads){text(t.title,'スレッド名');if(!Array.isArray(t.comments)){err('comments は配列です。');continue;}for(const m of t.comments){if(!m||typeof m!=='object'){err('コメントの形式が不正です。');continue;}text(m.text,'コメント');text(m.uid,'ID');text(m.name,'投稿者');}}
-  for(const p of c.posts){text(p.text,'投稿');if(p.replyTo&&!c.posts.some(parent=>parent.id===p.replyTo&&!parent.replyTo&&parent.id!==p.id))err('返信対象は通常の投稿を指定してください。');if(p.deleteAtStep!=null)step(p.deleteAtStep,p.id);if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
+  for(const p of c.posts){text(p.text,'投稿');if(p.quotePost&&!c.posts.some(q=>q.id===p.quotePost&&q.id!==p.id&&!q.replyTo))err('引用元の投稿が不正です。');if(p.replyTo&&!c.posts.some(parent=>parent.id===p.replyTo&&!parent.replyTo&&parent.id!==p.id))err('返信対象は通常の投稿を指定してください。');if(p.deleteAtStep!=null)step(p.deleteAtStep,p.id);if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
   for(const b of c.blogs){text(b.title,'ブログタイトル');text(b.body,'ブログ本文');text(b.excerpt,'ブログ概要');}
   for(const b of [...c.news,...c.diary]){text(b.title,'記事タイトル');text(b.text,'記事本文');}
   for(const r of c.socialRules){if(!['post','reply','dm'].includes(r.channel))err('SNS返信先が不正です。');text(r.keyword,'SNSキーワード');text(r.reply,'SNS返信');if((typeof r.keyword!=='string'||!r.keyword.trim()))err('SNSキーワードは空にできません。');if(!c.accounts.some(a=>a.id===r.account))err('SNS返信アカウントが存在しません。');if(r.invite&&!c.contacts.some(a=>a.id===r.invite))err('DMの招待先が存在しません。');step(r.minStep,r.id);if(r.targetPost&&!c.posts.some(p=>p.id===r.targetPost))err('返信対象ポストが存在しません。');}
@@ -210,7 +219,5 @@ export function validateWorld(w) {
 export function hashtags(text) { return [...text.matchAll(/[#＃]([\p{L}\p{N}\p{M}_]+)/gu)].map(m=>m[1].normalize('NFKC').toLocaleLowerCase()); }
 export function shareAccount(world,c,contact,account,now) {
  const a=c.accounts.find(a=>a.id===account);if(!a||!world.contacts.includes(contact))return world;
- const w=chatSend(world,c,contact,`@${a.handle}`,now);
- const sent=w.messages.findLast(m=>m.role==='sent'&&m.contact===contact);
- if(sent)sent.sharedAccount=account;return w;
+ return chatSend(world,c,contact,`@${a.handle}`,now,account);
 }

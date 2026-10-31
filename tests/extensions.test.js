@@ -25,7 +25,7 @@ test('negative contains excludes all aliases, exact takes priority, blank stays 
 });
 test('second-based schedule is persisted and obeys reply spacing',()=>{
  const cfg=structuredClone(c);cfg.rules=[{...rule('seconds','any',[],0,0,'了解'),schedule:{type:'delay',seconds:7,text:'予約'}}];assert.deepEqual(validateConfig(cfg),[]);
- let w=chatSend(initialWorld(cfg,now),cfg,'haru','はい',now);w=tickWorld(w,cfg,now+3000);w=JSON.parse(JSON.stringify(w));assert.equal(w.scheduled[1].at,now+10000);assert.equal(tickWorld(w,cfg,now+9999).messages.at(-1).text,'了解');assert.equal(tickWorld(w,cfg,now+10000).messages.at(-1).text,'予約');
+ let w=chatSend(initialWorld(cfg,now),cfg,'haru','はい',now);w=tickWorld(w,cfg,now+3000);w=JSON.parse(JSON.stringify(w));assert.equal(w.scheduled[1].at,now+8200);assert.equal(tickWorld(w,cfg,now+8199).messages.at(-1).text,'了解');assert.equal(tickWorld(w,cfg,now+8200).messages.at(-1).text,'予約');
 });
 test('reply rule is scoped to a specific visible post and progress',()=>{
  let w=initialWorld(c,now);w.step=2;w.steps[2]=now;w=socialSend(w,c,'reply','星座','p-welcome',now);assert.equal(w.replies.length,1);w=socialSend(w,c,'reply','星座','p-orange',now+1);assert.equal(w.replies.length,3);assert.equal(w.replies.at(-1).account,'staff');
