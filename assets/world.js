@@ -13,7 +13,7 @@ export function initialWorld(config, now = Date.now(), random = Math.random) {
   }
   return world;
 }
-export function allItems(c) { return [...c.posts,...c.blogs,...c.news,...c.diary,...c.threads.flatMap(t=>t.comments)]; }
+export function allItems(c) { return [...c.posts,...c.blogs,...c.news,...c.diary,...(c.salonArticles||[]),...(c.salonQuestions||[]),...c.threads.flatMap(t=>t.comments)]; }
 export function itemTime(item, w) {
   if (item.randomMinutes) return w.randomAt[item.id] ?? Infinity;
   const start = item.publishMode!=='time' && item.minStep > 0 ? w.steps[item.minStep] : w.startedAt;
@@ -150,6 +150,8 @@ export function validateConfig(c) {
   if(!c||c.version!==2)return ['version は 2 にしてください。'];
   for(const key of ['contacts','rules','accounts','posts','socialRules','threads','blogs','news','diary','events','gallery'])if(!Array.isArray(c[key]))err(`${key} は配列が必要です。`);
   if(errors.length)return errors;
+  for(const key of ['salonArticles','salonQuestions'])if(c[key]!==undefined&&(!Array.isArray(c[key])||c[key].some(v=>!v||typeof v.id!=='string'||!/^[a-zA-Z0-9_-]+$/.test(v.id)||typeof v.title!=='string'||typeof v.text!=='string'||v.title.length>20000||v.text.length>20000)))err('サロンの記事・質問の形式が不正です。');
+  if(errors.length)return errors;
   const ids=new Set();
   for(const group of ['contacts','rules','accounts','posts','socialRules','threads','blogs','news','diary','events']){
     const seen=new Set();for(const x of c[group]){if(!x||typeof x.id!=='string'||!/^[a-zA-Z0-9_-]+$/.test(x.id)||seen.has(x.id))err(`${group}: IDが不正または重複しています。`);seen.add(x?.id);}
@@ -207,6 +209,7 @@ export function validateWorld(w) {
   if(!w.contacts.every(x=>typeof x==='string')||!w.fired.every(x=>typeof x==='string'))return false;
   for(const k of ['messages','posts','replies','dms'])if(!w[k].every(m=>m&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at)&&Math.abs(m.at)<8e15))return false;
   if(!w.scheduled.every(m=>m&&typeof m.id==='string'&&typeof m.contact==='string'&&typeof m.text==='string'&&Number.isFinite(m.at)&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))&&(!m.invite||typeof m.invite==='string')&&(!m.kind||m.kind==='reply')))return false;
+  if(w.salonMember!=null&&(typeof w.salonMember.name!=='string'||!w.salonMember.name.trim()||w.salonMember.name.length>40||!Number.isFinite(w.salonMember.joined)))return false;
   if(w.member&&(!w.member.username||!w.member.number||typeof w.member.name!=='string'||typeof w.member.hash!=='string'||typeof w.member.salt!=='string'||!Number.isFinite(w.member.joined)))return false;
   if(!w.likes.every(x=>typeof x==='string')||!w.tickets.every(x=>typeof x==='string'))return false;
   if(!w.notices.every(n=>n&&typeof n.id==='string'&&typeof n.title==='string'&&typeof n.text==='string'&&typeof n.route==='string'&&!/^[a-z]+:|^\/\//i.test(n.route)&&Number.isFinite(n.at)))return false;

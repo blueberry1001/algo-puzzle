@@ -82,7 +82,7 @@
       "schedule": {
         "type": "daily",
         "hour": 19,
-        "text": "19時になったよ。灯りが消える前に掲示板を見てほしい。"
+        "text": "19時になったよ。灯りが消える前にSNSを見てほしい。"
       },
       "matchMode": "exact",
       "keywords": [
@@ -206,7 +206,7 @@
     {
       "id": "p-aoi",
       "account": "aoi",
-      "text": "こもれびの窓から見えた空！ あの夜のことはまだよく覚えてる...！ #余韻ノート",
+      "text": "ほらあなBASEの窓から見えた空！ あの夜のことはまだよく覚えてる...！ #余韻ノート",
       "image": "media/venue.png",
       "ageHours": 48,
       "minStep": 0
@@ -274,7 +274,7 @@
       "channel": "dm",
       "keyword": "こもれび",
       "account": "aoi",
-      "reply": "会場はレンタルスペース「こもれび」だよ。窓際の写真をよく見てみて。",
+      "reply": "会場はレンタルスペース「ほらあなBASE」だよ。窓際の写真をよく見てみて。",
       "minStep": 0,
       "name": "こもれびへのDM返信"
     },
@@ -299,106 +299,7 @@
       "minStep": 0
     }
   ],
-  "threads": [
-    {
-      "id": "live",
-      "title": "あの夜のアンコールが忘れられない！！",
-      "description": "AFTERGLOW SESSION の感想をゆっくり話すスレッド。",
-      "monthOffset": 0,
-      "tag": "LIVE",
-      "minStep": 0,
-      "comments": [
-        {
-          "id": "b1",
-          "name": "窓ぎわ",
-          "uid": "h8K4m2",
-          "text": "最後の曲で照明が落ちたあと、会場が一気に静かになったの最高だった...！ まだ思い出してる！！！",
-          "ageHours": 5,
-          "minStep": 0
-        },
-        {
-          "id": "b2",
-          "name": "青い栞",
-          "uid": "a2N9s1",
-          "text": "わかる！！ あの一瞬は時間が止まったみたいだった...！",
-          "ageHours": 4,
-          "minStep": 0
-        },
-        {
-          "id": "b3",
-          "name": "窓ぎわ",
-          "uid": "h8K4m2",
-          "text": "帰るときにスタッフさんがオレンジ色の封筒を探してた！ あれ気になる...！",
-          "ageHours": 0,
-          "minStep": 2
-        },
-        {
-          "id": "b4",
-          "name": "夜の散歩",
-          "uid": "u7F3q8",
-          "text": "写真を見返してたら窓に誰か映ってるの見つけた！！ 誰だろう...！",
-          "ageHours": 0,
-          "minStep": 0,
-          "randomMinutes": [
-            5,
-            12
-          ]
-        }
-      ]
-    },
-    {
-      "id": "photo",
-      "title": "みんなの写真を見たい！",
-      "description": "好きな風景やライブの帰り道の話。",
-      "monthOffset": 0,
-      "tag": "TALK",
-      "minStep": 0,
-      "comments": [
-        {
-          "id": "b5",
-          "name": "青い栞",
-          "uid": "z4A7p2",
-          "text": "こもれびの入り口にある木、秋になるとすごく綺麗！ 次も同じ場所がいいな！！",
-          "ageHours": 28,
-          "minStep": 0
-        },
-        {
-          "id": "b6",
-          "name": "アオイ",
-          "uid": "k9R2w5",
-          "text": "現像した写真に一枚だけ気になるものがあった...！ ハルにはもう連絡したよ！",
-          "ageHours": 0,
-          "minStep": 1
-        }
-      ]
-    },
-    {
-      "id": "archive",
-      "title": "はじめまして！自己紹介はこちら",
-      "description": "いつから聴いていますか？",
-      "monthOffset": -1,
-      "tag": "ARCHIVE",
-      "minStep": 0,
-      "comments": [
-        {
-          "id": "b7",
-          "name": "夜の散歩",
-          "uid": "y3L6m1",
-          "text": "配信で知って初めてライブに行きました！ 生で聴く歌声がすごかったです！！！",
-          "ageHours": 720,
-          "minStep": 0
-        },
-        {
-          "id": "b8",
-          "name": "窓ぎわ",
-          "uid": "b4P1s8",
-          "text": "去年の小さなライブから聴いてます！ ここのみんな話しやすくてうれしい！！",
-          "ageHours": 710,
-          "minStep": 0
-        }
-      ]
-    }
-  ],
+  "threads": [],
   "blogs": [
     {
       "id": "small-light",
@@ -467,7 +368,7 @@
     {
       "id": "ev1",
       "title": "AFTERGLOW SESSION vol.03",
-      "place": "レンタルスペース こもれび",
+      "place": "レンタルスペース ほらあなBASE",
       "daysFromStart": 30,
       "time": "18:30",
       "price": 3500,
@@ -478,7 +379,7 @@
     {
       "id": "ev0",
       "title": "AFTERGLOW SESSION vol.02",
-      "place": "レンタルスペース こもれび",
+      "place": "レンタルスペース ほらあなBASE",
       "daysFromStart": -14,
       "time": "18:30",
       "price": 3000,
@@ -570,7 +471,7 @@
     ]
   },
   "venue": {
-    "name": "こもれび",
+    "name": "ほらあなBASE",
     "address": "東京都灯野区青葉 2-17-4",
     "capacity": 20,
     "hourlyPrice": 3300,
@@ -596,6 +497,28 @@
     {
       "image": "media/clue.svg",
       "title": "余韻ノート / ふたつの言葉"
+    }
+  ],
+  "salonArticles": [
+    {
+      "id": "salon-first",
+      "title": "才能を見つけるための観察ノート",
+      "text": "人の強みは、得意なことを尋ねるだけでは見えてきません。\n\n何に時間を忘れるのか。どんな場面で自然に手が動くのか。まずは普段の行動を書き留めてみてください。\n\n小さな記録を重ねることが、その人らしい活動を考える出発点になります。",
+      "minStep": 0,
+      "delaySeconds": 0,
+      "ageHours": 0,
+      "image": ""
+    }
+  ],
+  "salonQuestions": [
+    {
+      "id": "salon-question-first",
+      "title": "活動の方向性に迷ったときは？",
+      "text": "いま続けたいことと、期待されていることを別々に書いてみてください。\n\n重なる部分があれば、そこから小さく試してみましょう。すぐに一つに決めなくても大丈夫です。",
+      "minStep": 0,
+      "delaySeconds": 0,
+      "ageHours": 0,
+      "image": ""
     }
   ]
 }
