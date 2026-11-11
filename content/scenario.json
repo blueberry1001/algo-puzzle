@@ -443,9 +443,9 @@
     ]
   },
   "recorder": {
-    "serial": "EC-0917",
+    "serial": "8042-991A",
     "password": "1900",
-    "description": "ECHO R-04 / 記録用ボイスロガー。保存された音声を一覧から選択して再生できます。記録時刻は機器の内部時計に基づきます。",
+    "description": "VS-402L 超小型IoT音声ロガーモジュール",
     "tracks": [
       {
         "id": "r1",
@@ -468,7 +468,8 @@
         "file": "media/recording-3.wav",
         "transcript": "遠ざかる足音。短い電子音のあと、静寂が続く。"
       }
-    ]
+    ],
+    "profileAudio": ""
   },
   "venue": {
     "name": "ほらあなBASE",

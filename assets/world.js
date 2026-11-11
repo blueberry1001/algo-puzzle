@@ -85,7 +85,7 @@ export function tickWorld(world,c,now) {
   }
   for(const p of c.posts) if(p.account==='mio'&&!c.accounts.find(a=>a.id===p.account)?.searchOnly&&visible(p,w,now)&&!w.fired.includes(p.id)) {
     w.fired.push(p.id);
-    if(itemTime(p,w)>=w.startedAt) addNotice(w,p.id,'星宮 澪が投稿しました',p.text,'sns/',itemTime(p,w));
+    if(itemTime(p,w)>=w.startedAt&&(!p.text.includes('{{date}}')||w.snsFirstOpenedAt!==undefined)) addNotice(w,p.id,'星宮 澪が投稿しました',socialText(p,w),'sns/',itemTime(p,w));
   }
   // Persist publication markers for every timed surface, so open tabs rerender once.
   for(const item of allItems(c)) if(visible(item,w,now)&&!w.fired.includes(`published:${item.id}`))w.fired.push(`published:${item.id}`);
@@ -184,7 +184,7 @@ export function validateConfig(c) {
   const handles=new Set();
   for(const a of c.accounts){if(a.searchOnly!==undefined&&typeof a.searchOnly!=='boolean')err('検索限定の設定が不正です。');if(!/^[A-Za-z0-9_]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字・_の6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
   for(const t of c.threads){text(t.title,'スレッド名');if(!Array.isArray(t.comments)){err('comments は配列です。');continue;}for(const m of t.comments){if(!m||typeof m!=='object'){err('コメントの形式が不正です。');continue;}text(m.text,'コメント');text(m.uid,'ID');text(m.name,'投稿者');}}
-  for(const p of c.posts){text(p.text,'投稿');if(p.quotePost&&!c.posts.some(q=>q.id===p.quotePost&&q.id!==p.id&&!q.replyTo))err('引用元の投稿が不正です。');if(p.replyTo&&!c.posts.some(parent=>parent.id===p.replyTo&&!parent.replyTo&&parent.id!==p.id))err('返信対象は通常の投稿を指定してください。');if(p.deleteAtStep!=null)step(p.deleteAtStep,p.id);if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
+  for(const p of c.posts){text(p.text,'投稿');if(p.dateDaysAgo!==undefined&&(!Number.isInteger(p.dateDaysAgo)||p.dateDaysAgo<0||p.dateDaysAgo>36500))err('投稿の日付は0〜36500日前の整数で指定してください。');if(p.quotePost&&!c.posts.some(q=>q.id===p.quotePost&&q.id!==p.id&&!q.replyTo))err('引用元の投稿が不正です。');if(p.replyTo&&!c.posts.some(parent=>parent.id===p.replyTo&&!parent.replyTo&&parent.id!==p.id))err('返信対象は通常の投稿を指定してください。');if(p.deleteAtStep!=null)step(p.deleteAtStep,p.id);if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
   for(const b of c.blogs){text(b.title,'ブログタイトル');text(b.body,'ブログ本文');text(b.excerpt,'ブログ概要');}
   for(const b of [...c.news,...c.diary]){text(b.title,'記事タイトル');text(b.text,'記事本文');}
   for(const r of c.socialRules){if(!['post','reply','dm'].includes(r.channel))err('SNS返信先が不正です。');text(r.keyword,'SNSキーワード');text(r.reply,'SNS返信');if((typeof r.keyword!=='string'||!r.keyword.trim()))err('SNSキーワードは空にできません。');if(!c.accounts.some(a=>a.id===r.account))err('SNS返信アカウントが存在しません。');if(r.invite&&!c.contacts.some(a=>a.id===r.invite))err('DMの招待先が存在しません。');step(r.minStep,r.id);if(r.targetPost&&!c.posts.some(p=>p.id===r.targetPost))err('返信対象ポストが存在しません。');}
@@ -197,7 +197,7 @@ export function validateConfig(c) {
   for(const e of c.events){for(const k of ['title','place','time','description'])text(e[k],k);step(e.minStep,e.id);if(!Number.isFinite(e.daysFromStart)||!Number.isFinite(e.price)||e.price<0)err('イベント日程・価格が不正です。');}
   for(const g of c.gallery){if(!g){err('写真設定が不正です。');continue;}asset(g.image);text(g.title,'写真タイトル');}
   if(c.management){text(c.management.recovery,'復旧ヒント');for(const m of c.management.members||[]){if(!m){err('会員設定が不正です。');continue;}for(const k of ['number','name','birth','gender','joined','plan'])text(m[k],k);for(const k of ['past','future'])if(!Array.isArray(m[k])||!m[k].every(x=>typeof x==='string'))err('イベント履歴が不正です。');if(!Array.isArray(m.gifts))err('ギフト履歴が不正です。');else for(const g of m.gifts){if(!g||typeof g.name!=='string'||typeof g.date!=='string'||!Number.isFinite(g.price))err('ギフトの形式が不正です。');}}}
-  if(c.recorder){text(c.recorder.serial,'シリアル');text(c.recorder.password,'音声パスワード');text(c.recorder.description,'製品説明');for(const t of c.recorder.tracks||[])for(const k of ['id','title','date','transcript'])text(t?.[k],k);}
+  if(c.recorder){asset(c.recorder.profileAudio);text(c.recorder.serial,'シリアル');text(c.recorder.password,'音声パスワード');text(c.recorder.description,'製品説明');for(const t of c.recorder.tracks||[])for(const k of ['id','title','date','transcript'])text(t?.[k],k);}
   if(c.venue){for(const k of ['name','address','description'])text(c.venue[k],k);if(!Number.isFinite(c.venue.hourlyPrice)||c.venue.hourlyPrice<0||!Number.isInteger(c.venue.capacity)||c.venue.capacity<1||c.venue.capacity>20)err('施設料金・定員が不正です。');}
   return errors;
 }
@@ -206,6 +206,7 @@ export function validateWorld(w) {
   for(const k of ['contacts','messages','scheduled','fired','posts','replies','dms','likes','notices','tickets','inquiries','reservations'])if(!Array.isArray(w[k])||w[k].length>5000)return false;
   if(!w.steps||typeof w.steps!=='object'||!Object.values(w.steps).every(Number.isFinite)||!w.randomAt||!Object.values(w.randomAt).every(Number.isFinite)||!w.read||typeof w.read!=='object')return false;
   if(w.pendingDms!==undefined&&(!Array.isArray(w.pendingDms)||w.pendingDms.length>5000||!w.pendingDms.every(m=>m&&typeof m.id==='string'&&typeof m.text==='string'&&typeof m.account==='string'&&typeof m.target==='string'&&Number.isFinite(m.at)&&(!m.invite||typeof m.invite==='string'))))return false;
+  if(w.snsFirstOpenedAt!==undefined&&(!Number.isFinite(w.snsFirstOpenedAt)||Math.abs(w.snsFirstOpenedAt)>8e15))return false;
   if(!w.contacts.every(x=>typeof x==='string')||!w.fired.every(x=>typeof x==='string'))return false;
   for(const k of ['messages','posts','replies','dms'])if(!w[k].every(m=>m&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at)&&Math.abs(m.at)<8e15))return false;
   if(!w.scheduled.every(m=>m&&typeof m.id==='string'&&typeof m.contact==='string'&&typeof m.text==='string'&&Number.isFinite(m.at)&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))&&(!m.invite||typeof m.invite==='string')&&(!m.kind||m.kind==='reply')))return false;
@@ -223,4 +224,14 @@ export function hashtags(text) { return [...text.matchAll(/[#＃]([\p{L}\p{N}\p{
 export function shareAccount(world,c,contact,account,now) {
  const a=c.accounts.find(a=>a.id===account);if(!a||!world.contacts.includes(contact))return world;
  return chatSend(world,c,contact,`@${a.handle}`,now,account);
+}
+
+export function markSnsOpened(world,now=Date.now()) {
+ if(world.snsFirstOpenedAt!==undefined)return world;
+ return {...world,snsFirstOpenedAt:now};
+}
+export function socialText(post,world) {
+ if(!post.text.includes('{{date}}')||world.snsFirstOpenedAt===undefined)return post.text;
+ const d=new Date(world.snsFirstOpenedAt+9*3600000-(post.dateDaysAgo||0)*86400000);
+ return post.text.replaceAll('{{date}}',`${d.getUTCMonth()+1}月${d.getUTCDate()}日`);
 }
