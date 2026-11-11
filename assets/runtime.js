@@ -53,7 +53,7 @@ export function transact(change){
 }
 export function advance(){return transact((w,c,n)=>tickWorld(w,c,n));}
 export async function reset(){return transact((w,c)=>initialWorld(c,Date.now()));}
-export function withNewContent(c){if(c.recorder?.serial==='EC-0917')c.recorder.serial='8042-991A';for(const key of ['salonArticles','salonQuestions'])if(c[key]===undefined)c[key]=structuredClone(defaults?.[key]||[]);return c;}
+export function withNewContent(c){if(c.recorder&&!c.recorder.profileAudio&&defaults?.recorder?.profileAudio)c.recorder.profileAudio=defaults.recorder.profileAudio;if(c.recorder?.serial==='EC-0917')c.recorder.serial='8042-991A';for(const key of ['salonArticles','salonQuestions'])if(c[key]===undefined)c[key]=structuredClone(defaults?.[key]||[]);return c;}
 export async function setConfig(next){withNewContent(next);if(JSON.stringify(next).length>2000000)throw new Error('設定全体は2MB以内にしてください。画像を小さくしてください。');const errors=validateConfig(next);if(errors.length)throw new Error(errors.join('\n'));localStorage.setItem(CONFIG_KEY,JSON.stringify(next));config=next;await transact((w)=>{const fresh=initialWorld(config,w.startedAt);for(const [id,t] of Object.entries(fresh.randomAt))if(!(id in w.randomAt))w.randomAt[id]=t;return w;});}
 export async function restoreConfig(){localStorage.removeItem(CONFIG_KEY);config=structuredClone(defaults);}
 export async function requestNotifications(){if(!('Notification' in window))return 'このブラウザは通知に対応していません。サイト内通知をご利用ください。';const result=await Notification.requestPermission();return result==='granted'?'ブラウザ通知を有効にしました。サイトを開いている間の更新をお知らせします。':result==='denied'?'通知は許可されていません。サイト内通知は引き続き利用できます。':'通知の設定は変更されませんでした。';}
