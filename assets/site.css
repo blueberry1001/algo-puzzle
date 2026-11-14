@@ -113,3 +113,5 @@ body[data-page=recorder]{background:#d4d7db;color:#222;font-family:Arial,'MS PGo
 button.social-self{width:100%;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;font:inherit;border-radius:12px}button.social-self:hover{background:#eef2f5}button.social-self:focus-visible{outline:2px solid #416b88;outline-offset:3px}
 
 .mobile-player-name{display:none}@media(max-width:850px){.mobile-player-name{display:block;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+.mention{color:#1675c5;text-decoration:none}.message-content audio{display:block;width:280px;max-width:100%;margin:8px 0}.quote-list-link{font-size:12px}

@@ -79,7 +79,9 @@ export function tickWorld(world,c,now) {
     // Use actual delivery times: overdue replies must not arrive in a burst on reopening.
     const due=Math.max(task.at,last?last.at+replyDelay(task.text):task.at);
     if(due>now)continue;
-    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,invite:task.invite,at:now});
+    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,audio:task.audio,invite:task.invite,at:now});
+    if(!w.contacts.includes(task.contact))w.contacts.push(task.contact);
+    if(task.advanceStep&&w.step<100){w.step++;w.steps[w.step]=now;}
     w.fired.push(task.id);
     addNotice(w,task.id,c.contacts.find(x=>x.id===task.contact)?.name||'TALK',task.text,`?contact=${task.contact}`,now);
   }
@@ -98,7 +100,7 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   const w=tickWorld(world,c,now);
   if(chatBusy(w,now))return w;
   w.messages.push({id:`sent-${now}-${w.messages.length}`,contact,role:'sent',text,at:now,...(sharedAccount?{sharedAccount}:{})});
-  const candidates=c.rules.filter(r=>r.contact===contact&&r.fromStep===w.step);
+  const candidates=c.rules.filter(r=>r.contact===contact&&(r.fromSteps||[r.fromStep]).includes(w.step));
   const rank={sharedAccount:-1,groups:0,exact:0,allContains:1,contains:2,notContains:3,any:4,fallback:5};
   const rule=candidates.sort((a,b)=>rank[a.matchMode||'exact']-rank[b.matchMode||'exact']).find(r=>matchesRule(r,text,sharedAccount));
   if(!rule) return w;
@@ -108,7 +110,7 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   if(w.step!==rule.toStep){w.step=rule.toStep;w.steps[w.step]=now;}
   let at=now;
   ruleReplies(rule).forEach((reply,i)=>{at+=replyDelay(reply.text);w.scheduled.push({id:`reply:${rule.id}:${i}${suffix}`,kind:'reply',contact,...reply,at});});
-  if(rule.schedule){const s=rule.schedule;w.scheduled.push({id:`scheduled:${rule.id}${suffix}`,contact,text:s.text,at:Math.max(at,s.type==='delay'?now+(s.seconds??s.minutes*60)*1000:s.type==='tomorrow'?tomorrowJstHour(now,s.hour):nextJstHour(now,s.hour))+(s.type==='tomorrow'?0:replyDelay(s.text))});}
+  if(rule.schedule){const s=rule.schedule;w.scheduled.push({id:`scheduled:${rule.id}${suffix}`,contact:s.contact||contact,audio:s.audio,advanceStep:s.advanceStep,text:s.text,at:Math.max(s.contact&&s.contact!==contact?now:at,s.type==='delay'?now+(s.seconds??s.minutes*60)*1000:s.type==='tomorrow'?tomorrowJstHour(now,s.hour):nextJstHour(now,s.hour))+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text))});}
   return tickWorld(w,c,now);
 }
 export function unlockContact(world,c,id) {
@@ -161,7 +163,7 @@ export function validateConfig(c) {
   const text=(v,label)=>{if(typeof v!=='string'||v.length>20000)err(`${label}: 文字列が必要です（20,000文字以内）。`);};
   const step=(v,label)=>{if(!Number.isInteger(v)||v<0||v>100)err(`${label}: 段階は0〜100の整数です。`);};
   const asset=(v)=>{if(v!==undefined&&v!==''&&(typeof v!=='string'||!/^media\/[a-zA-Z0-9_./-]+$/.test(v)||v.includes('..')))err('画像・音声は media/ 内の相対パスを指定してください。');};
-  if(['rules','posts','blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
+  if(['posts','blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
   for(const r of c.rules){
     const mode=r.matchMode||'exact';
     if(!['exact','contains','allContains','notContains','any','fallback','groups','sharedAccount'].includes(mode))err('一致方法が不正です。');
@@ -173,14 +175,15 @@ export function validateConfig(c) {
     if(mode==='sharedAccount'&&!c.accounts.some(a=>a.id===r.sharedAccount))err('共有対象のアカウントを選択してください。');
     const replies=ruleReplies(r);
     if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
-    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
+    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);asset(reply.audio);if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
     // Also reject unsafe legacy fields, even when the new fields take precedence.
     asset(r.image);
-    step(r.fromStep,r.id);step(r.toStep,r.id);if(r.name!==undefined)text(r.name,'ルール名');
+    if(r.fromSteps!==undefined){if(!Array.isArray(r.fromSteps)||!r.fromSteps.length)err('必要な段階を指定してください。');else r.fromSteps.forEach(v=>step(v,r.id));}step(r.fromStep,r.id);step(r.toStep,r.id);if(r.name!==undefined)text(r.name,'ルール名');
     if(!c.contacts.some(a=>a.id===r.contact))err(`${r.id}: 連絡先が存在しません。`);
-    if(r.schedule){text(r.schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(r.schedule.type))err('予約の種類が不正です。');if(r.schedule.type==='delay'&&(!Number.isFinite(r.schedule.seconds??r.schedule.minutes*60)||(r.schedule.seconds??r.schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(r.schedule.type)&&(!Number.isInteger(r.schedule.hour)||r.schedule.hour<0||r.schedule.hour>23))err('時刻は0〜23です。');}
+    if(r.schedule){asset(r.schedule.audio);if(r.schedule.contact&&!c.contacts.some(a=>a.id===r.schedule.contact))err('予約返信の連絡先が存在しません。');if(r.schedule.advanceStep!==undefined&&typeof r.schedule.advanceStep!=='boolean')err('予約返信の段階設定が不正です。');text(r.schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(r.schedule.type))err('予約の種類が不正です。');if(r.schedule.type==='delay'&&(!Number.isFinite(r.schedule.seconds??r.schedule.minutes*60)||(r.schedule.seconds??r.schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(r.schedule.type)&&(!Number.isInteger(r.schedule.hour)||r.schedule.hour<0||r.schedule.hour>23))err('時刻は0〜23です。');}
   }
   for(const a of c.contacts){text(a.name,'連絡先名');text(a.initial,'頭文字');step(a.unlockStep,a.id);if(!Array.isArray(a.intro)||!a.intro.every(x=>typeof x==='string'))err('初期メッセージが不正です。');}
+  for(const item of [...c.accounts,...c.posts]){for(const key of ['tags','searchKeywords'])if(item[key]!==undefined&&(!Array.isArray(item[key])||item[key].length>(key==='searchKeywords'?2:50)||!item[key].every(v=>typeof v==='string'&&v.trim()&&v.length<=100)))err('管理タグ・検索キーワードが不正です。');}
   const handles=new Set();
   for(const a of c.accounts){if(a.searchOnly!==undefined&&typeof a.searchOnly!=='boolean')err('検索限定の設定が不正です。');if(!/^[A-Za-z0-9_]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字・_の6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
   for(const t of c.threads){text(t.title,'スレッド名');if(!Array.isArray(t.comments)){err('comments は配列です。');continue;}for(const m of t.comments){if(!m||typeof m!=='object'){err('コメントの形式が不正です。');continue;}text(m.text,'コメント');text(m.uid,'ID');text(m.name,'投稿者');}}
@@ -217,6 +220,8 @@ export function validateWorld(w) {
   if(!w.notices.every(n=>n&&typeof n.id==='string'&&typeof n.title==='string'&&typeof n.text==='string'&&typeof n.route==='string'&&!/^[a-z]+:|^\/\//i.test(n.route)&&Number.isFinite(n.at)))return false;
   if(!w.reservations.every(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&typeof r.name==='string'&&Number.isInteger(r.start)&&r.start>=10&&r.start<=19&&[2,3,4].includes(r.hours)&&r.start+r.hours<=21&&Number.isInteger(r.people)&&r.people>=1&&r.people<=20&&Number.isFinite(r.price)))return false;
   if(!w.inquiries.every(r=>r&&typeof r.text==='string'&&typeof r.name==='string'&&Number.isFinite(r.at)))return false;
+  if([...w.messages,...w.scheduled].some(m=>m.audio&&!(typeof m.audio==='string'&&/^media\/[a-zA-Z0-9_./-]+$/.test(m.audio)&&!m.audio.includes('..'))))return false;
+  if(w.scheduled.some(m=>m.advanceStep!==undefined&&typeof m.advanceStep!=='boolean'))return false;
   if(!w.messages.every(m=>['sent','received'].includes(m.role)&&typeof m.contact==='string'&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))))return false;
   return true;
 }
