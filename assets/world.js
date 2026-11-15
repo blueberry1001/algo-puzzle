@@ -210,6 +210,7 @@ export function validateWorld(w) {
   if(!w.steps||typeof w.steps!=='object'||!Object.values(w.steps).every(Number.isFinite)||!w.randomAt||!Object.values(w.randomAt).every(Number.isFinite)||!w.read||typeof w.read!=='object')return false;
   if(w.pendingDms!==undefined&&(!Array.isArray(w.pendingDms)||w.pendingDms.length>5000||!w.pendingDms.every(m=>m&&typeof m.id==='string'&&typeof m.text==='string'&&typeof m.account==='string'&&typeof m.target==='string'&&Number.isFinite(m.at)&&(!m.invite||typeof m.invite==='string'))))return false;
   if(w.playerName!==undefined&&(typeof w.playerName!=='string'||w.playerName.length>40))return false;
+  if(w.shopPurchasedAt!==undefined&&(!Number.isFinite(w.shopPurchasedAt)||Math.abs(w.shopPurchasedAt)>8e15))return false;
   if(w.snsFirstOpenedAt!==undefined&&(!Number.isFinite(w.snsFirstOpenedAt)||Math.abs(w.snsFirstOpenedAt)>8e15))return false;
   if(!w.contacts.every(x=>typeof x==='string')||!w.fired.every(x=>typeof x==='string'))return false;
   for(const k of ['messages','posts','replies','dms'])if(!w[k].every(m=>m&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at)&&Math.abs(m.at)<8e15))return false;

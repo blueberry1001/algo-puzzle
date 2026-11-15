@@ -1,0 +1,2 @@
+export function isCharmSearch(query){const words=query.normalize('NFKC').trim().split(/\s+/);return words.length===2&&words.includes('お守り')&&words.includes('レモン');}
+export const products={goods:{name:'すぴんちゃんファングッズ',price:'1,000',sold:true,image:'',description:'すぴんちゃんのグッズ数点です。保存状態は良好です。すぴんちゃんを応援する気持ちがある方のご購入をお待ちしております。',category:['おもちゃ・グッズ','芸能','アイドル','その他']},charm:{name:'お守り',price:'0',sold:false,image:'',description:'急なお願いで申し訳ありません。よろしくお願いします。',category:['手芸','その他']}};
