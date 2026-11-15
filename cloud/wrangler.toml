@@ -4,10 +4,10 @@ compatibility_date = "2026-11-15"
 workers_dev = true
 
 [vars]
-ALLOWED_ORIGINS = "https://blueberry1001.github.io,http://127.0.0.1:4173"
+ALLOWED_ORIGINS = "https://blueberry1001.github.io"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "algo-studio-content"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "684d2d72-1bd6-428d-bde2-5214194a8981"
 migrations_dir = "migrations"

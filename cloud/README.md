@@ -18,9 +18,9 @@ GitHubアカウント、Cloudflareアカウント、JSONの操作は不要です
 
 既存STUDIOが扱うシナリオ（会話・SNS・記事等）の保存・公開です。商品ページや施設ページなどコードに直接書かれた内容の編集機能は増やしていません。大きな画像や音声ファイルのアップロードも今回の範囲外です。従来のJSON書き出しは残します。
 
-現在、content/cloud.jsonのendpointは空です。本番Cloudflareには未接続です。
+2026年11月16日に本番接続しました。保存先は `https://algo-studio-content.kubarun317.workers.dev` です。編集キーは管理者端末の `cloud/editor-secret.txt` に保存しています。このファイルはGit対象外です。
 
-## 管理者による初回設定（帰席後）
+## 管理者による初回設定（再構築時）
 
 無料プランのWorkers + D1を使用します。有料契約やR2は不要です。利用量が無料枠を超えた場合は読み書きが制限されるため、利用状況はCloudflareで確認してください。
 
@@ -52,7 +52,7 @@ npx wrangler dev --local --port 8787 --config cloud/wrangler.toml
 node tests/cloud.integration.mjs
 ```
 
-ブラウザテストはcontent/cloud.jsonの応答だけをローカルWorkerのURLへ差し替えて検証しました。公開設定ファイル自体は空のままです。
+ローカルでブラウザテストをする場合は、content/cloud.jsonの応答をローカルWorkerのURLへ差し替えてください。cloud/.dev.varsのALLOWED_ORIGINSにローカルサイトのoriginを指定してください。本番設定は変更しません。
 
 ## 取り外し方
 
