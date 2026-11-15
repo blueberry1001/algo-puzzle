@@ -1,3 +1,4 @@
+import {cloudActions,bindCloud} from '../cloud/editor.js';
 import {contentEditor,bindContentEditor} from './studio-content.js';
 import {socialEditor,bindSocialEditor} from './studio-social.js';
 import {current,scenario,defaultScenario,setConfig,restoreConfig,transact,subscribe,reset,clock,download,url} from '../runtime.js';
@@ -38,8 +39,9 @@ function render(){let content='';
  document.querySelector('#reset-world')?.addEventListener('click',()=>confirmAction('全進捗をリセット','会員登録、投稿、予約を含む作品の進捗を初期化します。必要なら先に書き出してください。',reset));
  document.querySelector('#export-world')?.addEventListener('click',()=>download('afterglow-progress.json',{format:'algo-progress-v2',exportedAt:new Date().toISOString(),world:current()}));
  document.querySelector('#world-file')?.addEventListener('change',e=>action(async()=>{const f=e.target.files[0];if(!f)return;if(f.size>5000000)throw new Error('進捗ファイルは5MB以内にしてください。');const data=JSON.parse(await f.text());if(data.format!=='algo-progress-v2'||!validateWorld(data.world))throw new Error('このファイルは有効な進捗データではありません。');confirmAction('進捗を復元','現在のブラウザの進捗を、読み込んだデータに置き換えます。',async()=>{await transact(()=>data.world);toast('進捗を復元しました。');});}));
+ bindCloud({applyPreview:setConfig,getDraft:()=>draft,loadDraft:async next=>{await setConfig(next);draft=structuredClone(next);render();},saveForm:()=>{if(tab==='json'){parseConfig(document.querySelector('#json-editor').value);return true;}for(const form of document.querySelectorAll('#contact-editor,#rule-editor,#content-editor,#account-editor,#social-rule-editor')){if(!form.reportValidity())return false;form.requestSubmit();}return true;}});
  updateStatus();
 }
-function publishActions(){return `<div class="publish-actions"><button id="apply-config" class="button">このブラウザに反映</button><button id="export-config" class="button secondary">${icon('download',17)} 共有用JSONを書き出す</button><button id="restore-config" class="text-button">公開設定に戻す</button></div>`;}
+function publishActions(){return `<div class="publish-actions">${cloudActions()}<button id="apply-config" class="button">このブラウザに反映</button><button id="export-config" class="button secondary">${icon('download',17)} 共有用JSONを書き出す</button><button id="restore-config" class="text-button">公開設定に戻す</button></div>`;}
 function updateStatus(){const chip=document.querySelector('#stage-chip');if(chip)chip.textContent=`段階 ${current().step}`;const status=document.querySelector('#test-status');if(status){const w=current();status.innerHTML=`<div><span>現在の段階</span><strong>${w.step}</strong></div><div><span>テスト用時刻（日本時間）</span><strong class="clock-text">${new Date(clock()).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}</strong></div><div><span>未送信の返信</span><strong>${w.scheduled.filter(s=>!w.fired.includes(s.id)).length}</strong></div>`;}}
 subscribe(updateStatus);render();

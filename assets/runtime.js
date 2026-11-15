@@ -1,3 +1,4 @@
+import {publicContent} from './cloud/client.js';
 import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorld,migrateLegacy,normalizeHandles } from './world.js';
 export const base = new URL('../',import.meta.url);
 export const url = path => new URL(path,base).href;
@@ -24,7 +25,7 @@ export async function boot(){
   if(ready)return ready;
   ready=(async()=>{
     const response=await fetch(url('content/scenario.json'),{cache:'no-cache'});if(!response.ok)throw new Error('シナリオの読み込みに失敗しました。再読み込みしてください。');
-    defaults=await response.json();config=defaults;
+    defaults=await publicContent(await response.json());config=defaults;
     const saved=localStorage.getItem(CONFIG_KEY);if(saved){try{const data=normalizeHandles(withNewContent(JSON.parse(saved)));if(!validateConfig(data).length){config=data;localStorage.setItem(CONFIG_KEY,JSON.stringify(data));}else showError('保存された設定に問題があるため、公開中の設定で起動しました。');}catch{showError('保存された設定を読み取れません。公開中の設定で起動しました。');}}
     const errors=validateConfig(config);if(errors.length)throw new Error(errors.join('\n'));
     const raw=localStorage.getItem(WORLD_KEY);
