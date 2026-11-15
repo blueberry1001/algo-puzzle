@@ -14,7 +14,10 @@ const saved=await (await call('/draft','PUT',{revision:before.revision,config}))
 assert.equal((await call('/draft','PUT',{revision:before.revision,config})).status,409);
 assert.equal((await call('/publish','POST',{revision:saved.revision})).status,400);
 assert.equal((await call('/publish','POST',{revision:before.revision,confirmPublish:true})).status,409);
-assert.equal((await call('/publish','POST',{revision:saved.revision,confirmPublish:true})).status,200);
+assert.equal((await call('/publish','POST',{revision:saved.revision,confirmPublish:true,title:'長'.repeat(81)})).status,400);
+assert.equal((await call('/publish','POST',{revision:saved.revision,confirmPublish:true,title:123})).status,400);
+assert.equal((await call('/publish','POST',{revision:saved.revision,confirmPublish:true,title:'  第3章の会話を追加  '})).status,200);
+const history=await (await call('/history')).json();assert.equal(history.find(h=>h.revision===saved.revision).title,'第3章の会話を追加');
 const published=await (await call('/public','GET',null,false)).json();assert.deepEqual(published.config,config);
 const changed=structuredClone(config);changed.contacts[0].name='共有テスト';
 const race=await Promise.all([call('/draft','PUT',{revision:saved.revision,config:changed}),call('/draft','PUT',{revision:saved.revision,config})]);assert.deepEqual(race.map(r=>r.status).sort(),[200,409]);
