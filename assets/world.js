@@ -45,6 +45,8 @@ function addNotice(w,id,title,text,route,at) {
 }
 // Legacy keyword/reply fields remain readable for existing shared scenario files.
 export const ruleKeywords = r => r.keywords ?? [r.keyword];
+export const ruleSchedules = r => r.schedules ?? (r.schedule ? [r.schedule] : []);
+export const replyAudios = r => r.audios ?? (r.audio ? [r.audio] : []);
 export const ruleReplies = r => r.replies ?? [{text:r.reply,image:r.image,invite:r.invite}];
 export function replyDelay(text) {
   const length = [...new Intl.Segmenter('ja', {granularity:'grapheme'}).segment(text)].length;
@@ -79,7 +81,7 @@ export function tickWorld(world,c,now) {
     // Use actual delivery times: overdue replies must not arrive in a burst on reopening.
     const due=Math.max(task.at,last?last.at+replyDelay(task.text):task.at);
     if(due>now)continue;
-    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,audio:task.audio,invite:task.invite,at:now});
+    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,audio:task.audio,audios:task.audios,invite:task.invite,at:now});
     if(!w.contacts.includes(task.contact))w.contacts.push(task.contact);
     if(task.advanceStep&&w.step<100){w.step++;w.steps[w.step]=now;}
     w.fired.push(task.id);
@@ -110,7 +112,7 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   if(w.step!==rule.toStep){w.step=rule.toStep;w.steps[w.step]=now;}
   let at=now;
   ruleReplies(rule).forEach((reply,i)=>{at+=replyDelay(reply.text);w.scheduled.push({id:`reply:${rule.id}:${i}${suffix}`,kind:'reply',contact,...reply,at});});
-  if(rule.schedule){const s=rule.schedule;w.scheduled.push({id:`scheduled:${rule.id}${suffix}`,contact:s.contact||contact,audio:s.audio,advanceStep:s.advanceStep,text:s.text,at:Math.max(s.contact&&s.contact!==contact?now:at,s.type==='delay'?now+(s.seconds??s.minutes*60)*1000:s.type==='tomorrow'?tomorrowJstHour(now,s.hour):nextJstHour(now,s.hour))+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text))});}
+  ruleSchedules(rule).forEach((s,i)=>{const origin=s.afterPrevious&&i>0?at:now;const due=s.type==='delay'?origin+(s.seconds??s.minutes*60)*1000:s.type==='tomorrow'?tomorrowJstHour(origin,s.hour):nextJstHour(origin,s.hour);const scheduledAt=Math.max(s.contact&&s.contact!==contact&&!s.afterPrevious?now:at,due)+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text));w.scheduled.push({id:`scheduled:${rule.id}${i?':part'+i:''}${suffix}`,contact:s.contact||contact,audios:replyAudios(s),advanceStep:s.advanceStep,text:s.text,at:scheduledAt});at=scheduledAt;});
   return tickWorld(w,c,now);
 }
 export function unlockContact(world,c,id) {
@@ -121,14 +123,14 @@ export function unlockContact(world,c,id) {
 export function socialSend(world,c,channel,text,target,now) {
   text=text.trim().slice(0,1000); if(!text)return world;
   if(channel==='dm'&&!c.accounts.some(a=>a.id===target))return world;
-  if(channel==='reply'&&!c.posts.some(p=>p.id===target&&visible(p,world,now))&&!world.posts.some(p=>p.id===target))return world;
+  if(channel==='reply'&&!socialPostAvailable(target,c,world,now))return world;
   const w=clone(world),id=`user-${now}-${w.posts.length+w.replies.length+w.dms.length}`;
   const record={id,text,at:now,account:'player',target};
   if(channel==='post')w.posts.unshift(record);
   if(channel==='reply')w.replies.push(record);
   if(channel==='dm')w.dms.push(record);
   const rules=c.socialRules.filter(r=>r.channel===channel&&w.step>=r.minStep&&text.includes(r.keyword)&&(channel!=='dm'||r.account===target)&&(channel!=='reply'||!r.targetPost||r.targetPost===target));
-  for(const r of rules){const response={id:`${id}:${r.id}`,text:r.reply,invite:r.invite||'',at:channel==='dm'?now+10000:now,account:r.account,target:channel==='post'?id:target};if(channel==='dm'){(w.pendingDms ||= []).push(response);continue;}else w.replies.push(response);if(c.accounts.find(a=>a.id===r.account)?.searchOnly)continue;addNotice(w,response.id,c.accounts.find(a=>a.id===r.account).name,r.reply,channel==='dm'?`sns/?view=dm&account=${target}`:`sns/?view=post&id=${channel==='post'?id:target}`,now);}
+  for(const r of rules){const response={id:`${id}:${r.id}`,text:r.reply,invite:r.invite||'',at:channel==='dm'?now+10000:now,account:r.account,target:channel==='dm'?target:id};if(channel==='dm'){(w.pendingDms ||= []).push(response);continue;}else w.replies.push(response);if(c.accounts.find(a=>a.id===r.account)?.searchOnly)continue;addNotice(w,response.id,c.accounts.find(a=>a.id===r.account).name,r.reply,channel==='dm'?`sns/?view=dm&account=${target}`:`sns/?view=post&id=${channel==='post'?id:target}`,now);}
   w.posts=w.posts.slice(0,200);w.replies=w.replies.slice(-500);w.dms=w.dms.slice(-500);return w;
 }
 export function migrateLegacy(old,c,now) {
@@ -163,7 +165,7 @@ export function validateConfig(c) {
   const text=(v,label)=>{if(typeof v!=='string'||v.length>20000)err(`${label}: 文字列が必要です（20,000文字以内）。`);};
   const step=(v,label)=>{if(!Number.isInteger(v)||v<0||v>100)err(`${label}: 段階は0〜100の整数です。`);};
   const asset=(v)=>{if(v!==undefined&&v!==''&&(typeof v!=='string'||!/^media\/[a-zA-Z0-9_./-]+$/.test(v)||v.includes('..')))err('画像・音声は media/ 内の相対パスを指定してください。');};
-  if(['posts','blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
+  if(['blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
   for(const r of c.rules){
     const mode=r.matchMode||'exact';
     if(!['exact','contains','allContains','notContains','any','fallback','groups','sharedAccount'].includes(mode))err('一致方法が不正です。');
@@ -175,19 +177,22 @@ export function validateConfig(c) {
     if(mode==='sharedAccount'&&!c.accounts.some(a=>a.id===r.sharedAccount))err('共有対象のアカウントを選択してください。');
     const replies=ruleReplies(r);
     if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
-    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);asset(reply.audio);if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
+    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);asset(reply.audio);if(reply.audios!==undefined){if(!Array.isArray(reply.audios)||reply.audios.length>20)err('音声は20件までです。');else reply.audios.forEach(asset);}if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.audios?.length&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
     // Also reject unsafe legacy fields, even when the new fields take precedence.
     asset(r.image);
     if(r.fromSteps!==undefined){if(!Array.isArray(r.fromSteps)||!r.fromSteps.length)err('必要な段階を指定してください。');else r.fromSteps.forEach(v=>step(v,r.id));}step(r.fromStep,r.id);step(r.toStep,r.id);if(r.name!==undefined)text(r.name,'ルール名');
     if(!c.contacts.some(a=>a.id===r.contact))err(`${r.id}: 連絡先が存在しません。`);
-    if(r.schedule){asset(r.schedule.audio);if(r.schedule.contact&&!c.contacts.some(a=>a.id===r.schedule.contact))err('予約返信の連絡先が存在しません。');if(r.schedule.advanceStep!==undefined&&typeof r.schedule.advanceStep!=='boolean')err('予約返信の段階設定が不正です。');text(r.schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(r.schedule.type))err('予約の種類が不正です。');if(r.schedule.type==='delay'&&(!Number.isFinite(r.schedule.seconds??r.schedule.minutes*60)||(r.schedule.seconds??r.schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(r.schedule.type)&&(!Number.isInteger(r.schedule.hour)||r.schedule.hour<0||r.schedule.hour>23))err('時刻は0〜23です。');}
+    if(r.schedules!==undefined&&(!Array.isArray(r.schedules)||r.schedules.length>30)){err('予約返信は30件までです。');continue;}
+    for(const schedule of ruleSchedules(r)){if(!schedule||typeof schedule!=='object'){err('予約返信の形式が不正です。');continue;}asset(schedule.audio);if(schedule.audios!==undefined){if(!Array.isArray(schedule.audios)||schedule.audios.length>20)err('音声は20件までです。');else schedule.audios.forEach(asset);}if(schedule.contact&&!c.contacts.some(a=>a.id===schedule.contact))err('予約返信の連絡先が存在しません。');for(const k of ['advanceStep','afterPrevious'])if(schedule[k]!==undefined&&typeof schedule[k]!=='boolean')err('予約返信の設定が不正です。');text(schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(schedule.type))err('予約の種類が不正です。');if(schedule.type==='delay'&&(!Number.isFinite(schedule.seconds??schedule.minutes*60)||(schedule.seconds??schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(schedule.type)&&(!Number.isInteger(schedule.hour)||schedule.hour<0||schedule.hour>23))err('時刻は0〜23です。');}
   }
   for(const a of c.contacts){text(a.name,'連絡先名');text(a.initial,'頭文字');step(a.unlockStep,a.id);if(!Array.isArray(a.intro)||!a.intro.every(x=>typeof x==='string'))err('初期メッセージが不正です。');}
   for(const item of [...c.accounts,...c.posts]){for(const key of ['tags','searchKeywords'])if(item[key]!==undefined&&(!Array.isArray(item[key])||item[key].length>(key==='searchKeywords'?2:50)||!item[key].every(v=>typeof v==='string'&&v.trim()&&v.length<=100)))err('管理タグ・検索キーワードが不正です。');}
   const handles=new Set();
   for(const a of c.accounts){if(a.searchOnly!==undefined&&typeof a.searchOnly!=='boolean')err('検索限定の設定が不正です。');if(!/^[A-Za-z0-9_]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字・_の6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
   for(const t of c.threads){text(t.title,'スレッド名');if(!Array.isArray(t.comments)){err('comments は配列です。');continue;}for(const m of t.comments){if(!m||typeof m!=='object'){err('コメントの形式が不正です。');continue;}text(m.text,'コメント');text(m.uid,'ID');text(m.name,'投稿者');}}
-  for(const p of c.posts){text(p.text,'投稿');if(p.dateDaysAgo!==undefined&&(!Number.isInteger(p.dateDaysAgo)||p.dateDaysAgo<0||p.dateDaysAgo>36500))err('投稿の日付は0〜36500日前の整数で指定してください。');if(p.quotePost&&!c.posts.some(q=>q.id===p.quotePost&&q.id!==p.id&&!q.replyTo))err('引用元の投稿が不正です。');if(p.replyTo&&!c.posts.some(parent=>parent.id===p.replyTo&&!parent.replyTo&&parent.id!==p.id))err('返信対象は通常の投稿を指定してください。');if(p.deleteAtStep!=null)step(p.deleteAtStep,p.id);if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
+  for(const p of c.posts){text(p.text,'投稿');if(p.dateDaysAgo!==undefined&&(!Number.isInteger(p.dateDaysAgo)||p.dateDaysAgo<0||p.dateDaysAgo>36500))err('投稿の日付は0〜36500日前の整数で指定してください。');if(p.quotePost&&!c.posts.some(q=>q.id===p.quotePost&&q.id!==p.id&&!q.replyTo))err('引用元の投稿が不正です。');if(p.replyTo&&!c.posts.some(parent=>parent.id===p.replyTo&&parent.id!==p.id))err('返信先が存在しません。');if(p.replyTo){const visited=new Set([p.id]);let parent=p.replyTo;while(parent){if(visited.has(parent)){err('返信先が循環しています。');break;}visited.add(parent);parent=c.posts.find(x=>x.id===parent)?.replyTo;}}for(const k of ['initialOrder','homePosition'])if(p[k]!=null&&(!Number.isInteger(p[k])||p[k]<1||p[k]>(k==='homePosition'?10:10000)))err('表示順が不正です。');if(p.homeSteps!==undefined){if(!Array.isArray(p.homeSteps))err('固定する段階が不正です。');else p.homeSteps.forEach(v=>step(v,p.id));}if(p.deleteAtStep!=null)step(p.deleteAtStep,p.id);if(!c.accounts.some(a=>a.id===p.account))err('投稿アカウントが存在しません。');}
+  for(let stage=0;stage<=100;stage++){const pins=c.posts.filter(p=>Array.isArray(p.homeSteps)&&p.homeSteps.includes(stage));const positions=pins.map(p=>p.homePosition);if(pins.some(p=>p.replyTo||!p.homePosition)||new Set(positions).size!==positions.length)err(`段階${stage}の固定位置が重複しているか、返信を固定しています。`);}
+  if(c.shopRules!==undefined){if(!Array.isArray(c.shopRules)||c.shopRules.length>200)err('出品者の返信設定が不正です。');else {const ids=new Set();for(const r of c.shopRules){if(!r||typeof r.id!=='string'||ids.has(r.id)||!['all','goods','charm'].includes(r.product)||!['exact','contains','any'].includes(r.matchMode)||!Array.isArray(r.keywords)||!r.keywords.every(k=>typeof k==='string'&&k.trim())||(r.matchMode!=='any'&&!r.keywords.length)){err('出品者の返信設定が不正です。');continue;}ids.add(r.id);text(r.reply,'出品者の返信');}}}
   for(const b of c.blogs){text(b.title,'ブログタイトル');text(b.body,'ブログ本文');text(b.excerpt,'ブログ概要');}
   for(const b of [...c.news,...c.diary]){text(b.title,'記事タイトル');text(b.text,'記事本文');}
   for(const r of c.socialRules){if(!['post','reply','dm'].includes(r.channel))err('SNS返信先が不正です。');text(r.keyword,'SNSキーワード');text(r.reply,'SNS返信');if((typeof r.keyword!=='string'||!r.keyword.trim()))err('SNSキーワードは空にできません。');if(!c.accounts.some(a=>a.id===r.account))err('SNS返信アカウントが存在しません。');if(r.invite&&!c.contacts.some(a=>a.id===r.invite))err('DMの招待先が存在しません。');step(r.minStep,r.id);if(r.targetPost&&!c.posts.some(p=>p.id===r.targetPost))err('返信対象ポストが存在しません。');}
@@ -221,6 +226,8 @@ export function validateWorld(w) {
   if(!w.notices.every(n=>n&&typeof n.id==='string'&&typeof n.title==='string'&&typeof n.text==='string'&&typeof n.route==='string'&&!/^[a-z]+:|^\/\//i.test(n.route)&&Number.isFinite(n.at)))return false;
   if(!w.reservations.every(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&typeof r.name==='string'&&Number.isInteger(r.start)&&r.start>=10&&r.start<=19&&[2,3,4].includes(r.hours)&&r.start+r.hours<=21&&Number.isInteger(r.people)&&r.people>=1&&r.people<=20&&Number.isFinite(r.price)))return false;
   if(!w.inquiries.every(r=>r&&typeof r.text==='string'&&typeof r.name==='string'&&Number.isFinite(r.at)))return false;
+  if(w.shopChats!==undefined&&(!Array.isArray(w.shopChats)||w.shopChats.length>500||!w.shopChats.every(m=>m&&['goods','charm'].includes(m.product)&&['sent','received'].includes(m.role)&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at))))return false;
+  if([...w.messages,...w.scheduled].some(m=>m.audios!==undefined&&(!Array.isArray(m.audios)||m.audios.length>20||!m.audios.every(a=>typeof a==='string'&&/^media\/[a-zA-Z0-9_./-]+$/.test(a)&&!a.includes('..')))))return false;
   if([...w.messages,...w.scheduled].some(m=>m.audio&&!(typeof m.audio==='string'&&/^media\/[a-zA-Z0-9_./-]+$/.test(m.audio)&&!m.audio.includes('..'))))return false;
   if(w.scheduled.some(m=>m.advanceStep!==undefined&&typeof m.advanceStep!=='boolean'))return false;
   if(!w.messages.every(m=>['sent','received'].includes(m.role)&&typeof m.contact==='string'&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))))return false;
@@ -242,3 +249,11 @@ export function socialText(post,world) {
  const d=new Date(world.snsFirstOpenedAt+9*3600000-(post.dateDaysAgo||0)*86400000);
  return post.text.replaceAll('{{date}}',`${d.getUTCMonth()+1}月${d.getUTCDate()}日`);
 }
+
+export function socialPostAvailable(id,c,w,now=Date.now()+(w.offset||0)) {
+ const seen=new Set();let next=id;
+ while(next){if(seen.has(next))return false;seen.add(next);const configured=c.posts.find(p=>p.id===next),post=configured||w.posts.find(p=>p.id===next)||w.replies.find(p=>p.id===next);if(!post||(configured&&!visible(post,w,now)))return false;next=post.replyTo||post.target;}
+ return true;
+}
+export function setTestStep(world,step,now){if(!Number.isInteger(step)||step<0||step>100)throw Error('段階は0〜100の整数で指定してください。');const w=clone(world);w.step=step;for(let n=0;n<=step;n++)w.steps[n]??=now;w.steps[step]=now;w.fired=w.fired.filter(id=>!id.startsWith('deleted:'));return w;}
+export function shopSend(world,c,product,text,now){text=text.trim().slice(0,1000);if(!text||!['goods','charm'].includes(product))return world;const w=clone(world);w.shopChats ||= [];w.shopChats.push({id:crypto.randomUUID(),product,role:'sent',text,at:now});const rule=(c.shopRules||[]).filter(r=>r.product==='all'||r.product===product).sort((a,b)=>({exact:0,contains:1,any:2}[a.matchMode]-{exact:0,contains:1,any:2}[b.matchMode])).find(r=>matchesRule(r,text));if(rule)w.shopChats.push({id:crypto.randomUUID(),product,role:'received',text:rule.reply,at:now});w.shopChats=w.shopChats.slice(-500);return w;}

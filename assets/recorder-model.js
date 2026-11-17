@@ -1,9 +1,10 @@
 export const RECORDER_SERIAL='8042-991A';
 export const RECORDER_QUESTION='好きなタバコの銘柄は？';
 export const RECORDER_ANSWER='アメリカンスピリット';
+export const RECORDER_ANSWERS=['アメスピ','アメリカンスピリット','アメリカン・スピリット','ナチュラルアメリカンスピリット','ナチュラル・アメリカン・スピリット'];
 export const DECODE_ERROR='再生できません。専用の波形解析デコーダー、または音響信号処理環境によるデコードおよびサンプリングレート再構築が必要です。';
 export const EXPIRED_ERROR='保存期間が超過しています';
-export function recorderLogin(serial,answer,mode,password){return serial.trim()===RECORDER_SERIAL&&(mode==='recovery'?answer.trim()===RECORDER_ANSWER:answer===password);}
+export function recorderLogin(serial,answer,mode,password){return serial.trim()===RECORDER_SERIAL&&(mode==='recovery'?RECORDER_ANSWERS.includes(answer.trim()):answer===password);}
 export const recorderGuide=`<h1>超小型IoT音声ロガーモジュール 仕様・機能ガイド</h1>
 <h2>製品概要</h2>
 <p>　本製品は、各種産業・学術調査および環境監視向けに設計された40×40mmクラスの超小型音声センシングモジュールです。音声検知（VOX）機能とデュアル・ストレージシステムを標準搭載しています。</p>
