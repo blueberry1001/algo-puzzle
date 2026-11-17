@@ -16,7 +16,17 @@ GitHub・Cloudflareのアカウントは不要です。現在はSTUDIOのURLを�
 
 ## 実装範囲
 
-既存STUDIOが扱うシナリオ（会話・SNS・記事等）の保存・公開です。商品ページや施設ページなどコードに直接書かれた内容の編集機能は増やしていません。大きな画像や音声ファイルのアップロードも今回の範囲外です。従来のJSON書き出しは残します。
+既存STUDIOが扱うシナリオ（会話・SNS・記事等）の保存・公開と、TALKへ添付するMP3の保存です。商品ページや施設ページなどコードに直接書かれた内容の編集機能は増やしていません。従来のJSON書き出しは残します。
+
+## MP3の添付
+
+「会話シナリオ」の通常返信・予約返信で「MP3を添付」を押します。複数選択でき、1ファイル10MBまで、1通に20ファイルまで添付できます。STUDIOにはファイル名と試聴ボタンを表示します。TALKには再生・一時停止ボタンだけを表示します。
+
+添付時にファイルを共通保存先へ送ります。返信ルールは「変更を反映する」から公開するまで他のプレイヤーには反映されません。取り外しても音声本体は削除しません。公開履歴や送信済みの会話で使われるためです。同じファイルの再添付は容量を重複して使いません。
+
+音声は既存のD1に分割保存します。1行500,000バイト分をBase64で保存し、取り出すときに音声へ戻します。ファイル合計は150MBに制限しています。Base64を含む実保存量は約200MBとなり、シナリオ・履歴用の領域を残します。設定JSONやプレイヤーのLocalStorageには短い参照IDだけを入れます。音声は再生時に取得し、途中からの取得にも対応します。
+
+音声用の処理は `cloud/audio.js`、編集側は `assets/cloud/audio-client.js` と `assets/pages/studio-audio.js` に分離しています。R2の追加契約は不要です。ファイル数や利用者数が増える場合は音声の保存先だけをR2などへ移せます。
 
 2026年11月16日に本番接続しました。保存先は `https://algo-studio-content.kubarun317.workers.dev` です。現在は `PUBLIC_EDITING = "true"` でキー不要の更新を有効にしています。
 
@@ -56,13 +66,14 @@ node tests/cloud.integration.mjs
 
 1. 必要な公開履歴をSTUDIOで開き、JSONを書き出す。
 2. その内容をcontent/scenario.jsonに反映する。
-3. content/cloud.jsonのendpointを空にして公開する。この時点でクラウドなしの運用に戻る。
-4. 完全撤去する場合：assets/runtime.jsのpublicContentのimportと呼び出しを外し、従来のresponse.json()読込へ戻す。assets/pages/studio.jsのcloudActions/bindCloudのimportと呼び出しを外す。
-5. assets/cloud/、cloud/、content/cloud.json、tests/cloud.integration.mjsを削除し、wranglerの開発依存を外す。
-6. 内容の退避を確認してからCloudflare側のWorkerとD1を削除する。
+3. 添付音声がある場合はD1のaudio_filesからIDを確認し、`GET /audio/<ID>.mp3` で全ファイルを取得して `media/<ID>.mp3` に置く。公開履歴やプレイヤーの会話に残るファイルも退避する。設定内の `audio:<ID>` はそのままでよい。
+4. content/cloud.jsonのendpointを空にして公開する。音声の参照先も `media/<ID>.mp3` に切り替わり、クラウドなしの運用に戻る。
+5. 完全撤去する場合：assets/runtime.jsのpublicContentのimportと呼び出しを外し、従来のresponse.json()読込へ戻す。assets/pages/studio.jsのcloudActions/bindCloudを外す。studio-audio.jsのアップロード・音声名取得を外して音声パス入力だけを残す。audio-player.jsのcloudEndpointを空文字に置き換える。
+6. assets/cloud/、cloud/、content/cloud.json、tests/cloud.integration.mjsを削除し、wranglerの開発依存を外す。
+7. 内容と音声の退避・再生を確認してからCloudflare側のWorkerとD1を削除する。
 
-プレイヤーの進捗はこれまでどおり端末のLocalStorageです。クラウドにはシナリオだけを保存します。現在は公開履歴も認証なしで閲覧できます。接続失敗時は最後に取得できた公開内容を使用します。初回から接続できなければエラー表示になります。
+プレイヤーの進捗はこれまでどおり端末のLocalStorageです。クラウドにはシナリオと添付音声を保存します。現在は公開履歴も認証なしで閲覧できます。接続失敗時は最後に取得できた公開内容を使用します。初回から接続できなければエラー表示になります。
 
 ## 更新時の注意
 
-新しい画面は `GET /publication` と設定本文付きの `POST /publish` を使用します。先にWorkerをデプロイし、その後サイトを更新してください。DBの追加マイグレーションは不要です。旧クライアントとの互換性と既存データ保全のため、旧 `/draft` APIとDBのdraft列は残していますが、新しい画面からは使用しません。
+新しい画面は `GET /publication` と設定本文付きの `POST /publish` を使用します。MP3の添付には `0003_audio.sql` の適用が必要です。先にDBのマイグレーションを適用してWorkerをデプロイし、その後サイトを更新してください。旧クライアントとの互換性と既存データ保全のため、旧 `/draft` APIとDBのdraft列は残していますが、新しい画面からは使用しません。

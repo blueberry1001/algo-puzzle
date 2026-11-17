@@ -1,4 +1,5 @@
 // Pure, browser-independent scenario engine. All effects are persisted by runtime.js.
+import {safeAudio} from './audio-assets.js';
 export const WORLD_KEY = 'algo-puzzle:world:v2';
 export const CONFIG_KEY = 'algo-puzzle:scenario:v2';
 export const randomHandle = () => Array.from(crypto.getRandomValues(new Uint8Array(6 + crypto.getRandomValues(new Uint8Array(1))[0] % 11)), n => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[n % 62]).join('');
@@ -171,6 +172,7 @@ export function validateConfig(c) {
   const text=(v,label)=>{if(typeof v!=='string'||v.length>20000)err(`${label}: 文字列が必要です（20,000文字以内）。`);};
   const step=(v,label)=>{if(!Number.isInteger(v)||v<0||v>100)err(`${label}: 段階は0〜100の整数です。`);};
   const asset=(v)=>{if(v!==undefined&&v!==''&&(typeof v!=='string'||!/^media\/[a-zA-Z0-9_./-]+$/.test(v)||v.includes('..')))err('画像・音声は media/ 内の相対パスを指定してください。');};
+  const audio=(v)=>{if(v!==undefined&&v!==''&&!safeAudio(v))err('音声を添付するか、media/ 内の音声パスを指定してください。');};
   if(['blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
   for(const r of c.rules){
     const mode=r.matchMode||'exact';
@@ -183,13 +185,13 @@ export function validateConfig(c) {
     if(mode==='sharedAccount'&&!c.accounts.some(a=>a.id===r.sharedAccount))err('共有対象のアカウントを選択してください。');
     const replies=ruleReplies(r);
     if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
-    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);asset(reply.audio);if(reply.audios!==undefined){if(!Array.isArray(reply.audios)||reply.audios.length>20)err('音声は20件までです。');else reply.audios.forEach(asset);}if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.audios?.length&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
+    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);audio(reply.audio);if(reply.audios!==undefined){if(!Array.isArray(reply.audios)||reply.audios.length>20)err('音声は20件までです。');else reply.audios.forEach(audio);}if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.audios?.length&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
     // Also reject unsafe legacy fields, even when the new fields take precedence.
     asset(r.image);
     if(r.fromSteps!==undefined){if(!Array.isArray(r.fromSteps)||!r.fromSteps.length)err('必要な段階を指定してください。');else r.fromSteps.forEach(v=>step(v,r.id));}step(r.fromStep,r.id);step(r.toStep,r.id);if(r.name!==undefined)text(r.name,'ルール名');
     if(!c.contacts.some(a=>a.id===r.contact))err(`${r.id}: 連絡先が存在しません。`);
     if(r.schedules!==undefined&&(!Array.isArray(r.schedules)||r.schedules.length>30)){err('予約返信は30件までです。');continue;}
-    for(const schedule of ruleSchedules(r)){if(!schedule||typeof schedule!=='object'){err('予約返信の形式が不正です。');continue;}asset(schedule.audio);if(schedule.audios!==undefined){if(!Array.isArray(schedule.audios)||schedule.audios.length>20)err('音声は20件までです。');else schedule.audios.forEach(asset);}if(schedule.contact&&!c.contacts.some(a=>a.id===schedule.contact))err('予約返信の連絡先が存在しません。');for(const k of ['advanceStep','afterPrevious'])if(schedule[k]!==undefined&&typeof schedule[k]!=='boolean')err('予約返信の設定が不正です。');text(schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(schedule.type))err('予約の種類が不正です。');if(schedule.type==='delay'&&(!Number.isFinite(schedule.seconds??schedule.minutes*60)||(schedule.seconds??schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(schedule.type)&&(!Number.isInteger(schedule.hour)||schedule.hour<0||schedule.hour>23))err('時刻は0〜23です。');}
+    for(const schedule of ruleSchedules(r)){if(!schedule||typeof schedule!=='object'){err('予約返信の形式が不正です。');continue;}audio(schedule.audio);if(schedule.audios!==undefined){if(!Array.isArray(schedule.audios)||schedule.audios.length>20)err('音声は20件までです。');else schedule.audios.forEach(audio);}if(schedule.contact&&!c.contacts.some(a=>a.id===schedule.contact))err('予約返信の連絡先が存在しません。');for(const k of ['advanceStep','afterPrevious'])if(schedule[k]!==undefined&&typeof schedule[k]!=='boolean')err('予約返信の設定が不正です。');text(schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(schedule.type))err('予約の種類が不正です。');if(schedule.type==='delay'&&(!Number.isFinite(schedule.seconds??schedule.minutes*60)||(schedule.seconds??schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(schedule.type)&&(!Number.isInteger(schedule.hour)||schedule.hour<0||schedule.hour>23))err('時刻は0〜23です。');}
   }
   for(const a of c.contacts){text(a.name,'連絡先名');text(a.initial,'頭文字');step(a.unlockStep,a.id);if(!Array.isArray(a.intro)||!a.intro.every(x=>typeof x==='string'))err('初期メッセージが不正です。');}
   for(const item of [...c.accounts,...c.posts]){for(const key of ['tags','searchKeywords'])if(item[key]!==undefined&&(!Array.isArray(item[key])||item[key].length>(key==='searchKeywords'?2:50)||!item[key].every(v=>typeof v==='string'&&v.trim()&&v.length<=100)))err('管理タグ・検索キーワードが不正です。');}
@@ -233,8 +235,8 @@ export function validateWorld(w) {
   if(!w.reservations.every(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&typeof r.name==='string'&&Number.isInteger(r.start)&&r.start>=10&&r.start<=19&&[2,3,4].includes(r.hours)&&r.start+r.hours<=21&&Number.isInteger(r.people)&&r.people>=1&&r.people<=20&&Number.isFinite(r.price)))return false;
   if(!w.inquiries.every(r=>r&&typeof r.text==='string'&&typeof r.name==='string'&&Number.isFinite(r.at)))return false;
   if(w.shopChats!==undefined&&(!Array.isArray(w.shopChats)||w.shopChats.length>500||!w.shopChats.every(m=>m&&['goods','charm'].includes(m.product)&&['sent','received'].includes(m.role)&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at))))return false;
-  if([...w.messages,...w.scheduled].some(m=>m.audios!==undefined&&(!Array.isArray(m.audios)||m.audios.length>20||!m.audios.every(a=>typeof a==='string'&&/^media\/[a-zA-Z0-9_./-]+$/.test(a)&&!a.includes('..')))))return false;
-  if([...w.messages,...w.scheduled].some(m=>m.audio&&!(typeof m.audio==='string'&&/^media\/[a-zA-Z0-9_./-]+$/.test(m.audio)&&!m.audio.includes('..'))))return false;
+  if([...w.messages,...w.scheduled].some(m=>m.audios!==undefined&&(!Array.isArray(m.audios)||m.audios.length>20||!m.audios.every(safeAudio))))return false;
+  if([...w.messages,...w.scheduled].some(m=>m.audio&&!safeAudio(m.audio)))return false;
   if(w.scheduled.some(m=>m.advanceStep!==undefined&&typeof m.advanceStep!=='boolean'))return false;
   if(!w.messages.every(m=>['sent','received'].includes(m.role)&&typeof m.contact==='string'&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))))return false;
   return true;
