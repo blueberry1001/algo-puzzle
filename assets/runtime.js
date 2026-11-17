@@ -1,23 +1,31 @@
 import {publicContent} from './cloud/client.js';
-import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorld,migrateLegacy,normalizeHandles } from './world.js';
+import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorld,migrateLegacy,normalizeHandles,hasDueDelivery } from './world.js';
+import {withStorageLock,StorageLockTimeout} from './storage-lock.js';
 export const base = new URL('../',import.meta.url);
 export const url = path => new URL(path,base).href;
 let config, world, defaults, listeners = new Set(), ready, queue=Promise.resolve();
-let advancePending=null,advanceTimer=null,advancePaused=false,transactionError='';
+let advancePending=null,advanceTimer=null,advancePaused=false,transactionError='',blockedSince=null,lastAdvanceAt=0;
 export const current=()=>world;
 export const scenario=()=>config;
 export const defaultScenario=()=>structuredClone(defaults);
 export const clock=()=>Date.now()+(world?.offset||0);
-export function showError(message) {
+export function showError(message,{reload=false}={}) {
   let el=document.querySelector('#global-error');
   if(!el){el=document.createElement('div');el.id='global-error';el.className='global-error';el.setAttribute('role','alert');document.body.prepend(el);}
   el.textContent=message;
+  if(reload){const button=document.createElement('button');button.type='button';button.className='button secondary small recovery-button';button.textContent='再読み込み';button.onclick=()=>location.reload();el.append(button);}
 }
 export function subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);}
 function emit(){for(const fn of listeners)try{fn();}catch(error){console.error(error);showError('画面を更新できませんでした。ページを再読み込みしてください。');}}
 function scheduleAdvance(delay=250){clearTimeout(advanceTimer);if(document.hidden||advancePaused)return;advanceTimer=setTimeout(()=>{advance().catch(()=>{}).finally(()=>scheduleAdvance());},delay);}
 function pauseAdvance(){advancePaused=true;clearTimeout(advanceTimer);}
 function resumeAdvance(){advancePaused=false;if(document.hidden)return;try{world=read();emit();}catch(error){showError(error.message);}scheduleAdvance(0);}
+function wakeAdvance(){if(!document.hidden&&(advancePaused||Date.now()-lastAdvanceAt>2000))resumeAdvance();}
+function reportBlockedDelivery(){
+  if(document.hidden||advancePaused||!hasDueDelivery(world,clock())){blockedSince=null;return;}
+  blockedSince??=Date.now();
+  if(Date.now()-blockedSince>=4000){const message='返信の処理が止まっています。作品のほかのタブを閉じて再読み込みしてください。進捗は残ります。';if(transactionError!==message||!document.querySelector('#global-error')){transactionError=message;showError(transactionError,{reload:true});}}
+}
 function read(){const raw=localStorage.getItem(WORLD_KEY);if(!raw)return world;let parsed;try{parsed=JSON.parse(raw);}catch{throw new Error('保存データが読み取れません。制作スタジオからバックアップを復元してください。');}if(!validateWorld(parsed))throw new Error('保存データの形式が不正です。制作スタジオから復元してください。');return parsed;}
 async function notifyNew(before,next){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
@@ -40,10 +48,13 @@ export async function boot(){
     if('serviceWorker' in navigator)navigator.serviceWorker.register(url('sw.js'),{scope:base.pathname}).catch(()=>{});
     window.addEventListener('storage',e=>{if(e.key===CONFIG_KEY){location.reload();return;}if(e.key===WORLD_KEY){try{world=read();if(!document.hidden)emit();}catch(err){showError(err.message);}}});
     window.addEventListener('pageshow',resumeAdvance);
+    window.addEventListener('focus',resumeAdvance);
     window.addEventListener('pagehide',pauseAdvance);
     document.addEventListener('visibilitychange',()=>document.hidden?pauseAdvance():resumeAdvance());
     document.addEventListener('freeze',pauseAdvance);
     document.addEventListener('resume',resumeAdvance);
+    document.addEventListener('pointerdown',wakeAdvance,{passive:true});
+    document.addEventListener('keydown',wakeAdvance);
     await advance();scheduleAdvance();return {config,world};
   })();
   return ready;
@@ -60,20 +71,17 @@ export function transact(change,{idle=false}={}){
   };
   const work=async()=>{
     let result;
-    if(!navigator.locks)result=perform();
-    else if(idle)result=await navigator.locks.request(WORLD_KEY,{ifAvailable:true},lock=>lock?perform():null);
-    else {
-      const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),4000);
-      try{result=await navigator.locks.request(WORLD_KEY,{signal:controller.signal},perform);}catch(error){if(error.name==='AbortError')throw Error('別のタブの処理を待っています。作品のほかのタブを閉じて、もう一度お試しください。');throw error;}finally{clearTimeout(timeout);}
-    }
+    try{result=await withStorageLock(navigator.locks,WORLD_KEY,perform,{idle});}
+    catch(error){if(!idle||!(error instanceof StorageLockTimeout))throw error;}
+    if(idle&&!result)reportBlockedDelivery();else if(result)blockedSince=null;
     // Rendering and media updates must never hold the cross-tab storage lock.
-    if(result&&transactionError){const el=document.querySelector('#global-error');if(el?.textContent===transactionError)el.remove();transactionError='';}
+    if(result&&transactionError){const el=document.querySelector('#global-error');if(el?.textContent.startsWith(transactionError))el.remove();transactionError='';}
     if(result?.changed){emit();void notifyNew(result.before,result.next);}
     return world;
   };
   queue=queue.catch(()=>{}).then(work).catch(err=>{transactionError=`保存できませんでした。${err.message}`;showError(transactionError);throw err;});return queue;
 }
-export function advance(){if(!advancePending)advancePending=transact((w,c,n)=>tickWorld(w,c,n),{idle:true}).finally(()=>{advancePending=null;});return advancePending;}
+export function advance(){if(!advancePending)advancePending=transact((w,c,n)=>tickWorld(w,c,n),{idle:true}).finally(()=>{advancePending=null;lastAdvanceAt=Date.now();});return advancePending;}
 export async function reset(){return transact((w,c)=>initialWorld(c,Date.now()));}
 export function withNewContent(c){if(c.recorder&&!c.recorder.profileAudio&&defaults?.recorder?.profileAudio)c.recorder.profileAudio=defaults.recorder.profileAudio;if(c.recorder?.serial==='EC-0917')c.recorder.serial='8042-991A';for(const key of ['salonArticles','salonQuestions'])if(c[key]===undefined)c[key]=structuredClone(defaults?.[key]||[]);return c;}
 export async function setConfig(next){withNewContent(next);if(JSON.stringify(next).length>2000000)throw new Error('設定全体は2MB以内にしてください。画像を小さくしてください。');const errors=validateConfig(next);if(errors.length)throw new Error(errors.join('\n'));localStorage.setItem(CONFIG_KEY,JSON.stringify(next));config=next;await transact((w)=>{const fresh=initialWorld(config,w.startedAt);for(const [id,t] of Object.entries(fresh.randomAt))if(!(id in w.randomAt))w.randomAt[id]=t;return w;});}

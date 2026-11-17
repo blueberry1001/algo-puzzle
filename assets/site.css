@@ -131,3 +131,4 @@ button.social-self{width:100%;border:0;background:transparent;color:inherit;text
 .audio-attachment .audio-play{width:42px;height:42px}.audio-attachment-name{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px}
 .audio-attachment>.icon-button{flex:none}.audio-paths{font-size:12px;color:#66736d}.audio-paths summary{cursor:pointer;padding:6px 0}.audio-paths .field{margin-top:8px}
 .audio-upload-status{overflow-wrap:anywhere}.modal progress{width:100%;accent-color:#253b50}
+.global-error .recovery-button{margin:6px 0 0 12px;min-height:44px;border-color:currentColor;color:inherit}

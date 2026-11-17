@@ -70,6 +70,13 @@ export function matchesRule(r, text, sharedAccount) {
 }
 export function pendingTyping(w,now=Date.now()+(w.offset||0)) {return w.scheduled.find(t=>!w.fired.includes(t.id)&&(t.kind==='reply'||now>=t.at-replyDelay(t.text)));}
 export function chatBusy(w,now) { return !!pendingTyping(w,now); }
+export function hasDueDelivery(w,now) {
+  if (w.pendingDms?.some(t=>t.at<=now)) return true;
+  const fired=new Set(w.fired),heads=new Map(),last=new Map();
+  for (const m of w.messages) if (m.role==='received') last.set(m.contact,m.at);
+  for (const task of w.scheduled) if (!fired.has(task.id)&&(!heads.has(task.contact)||task.at<heads.get(task.contact).at)) heads.set(task.contact,task);
+  return [...heads.values()].some(task=>Math.max(task.at,last.has(task.contact)?last.get(task.contact)+replyDelay(task.text):task.at)<=now);
+}
 export function tickWorld(world,c,now) {
   const w=clone(world);
   w.pendingDms ||= [];
