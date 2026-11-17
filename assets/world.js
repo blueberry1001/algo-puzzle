@@ -48,9 +48,15 @@ export const ruleKeywords = r => r.keywords ?? [r.keyword];
 export const ruleSchedules = r => r.schedules ?? (r.schedule ? [r.schedule] : []);
 export const replyAudios = r => r.audios ?? (r.audio ? [r.audio] : []);
 export const ruleReplies = r => r.replies ?? [{text:r.reply,image:r.image,invite:r.invite}];
+let replySegmenter;
+const replyDelayCache=new Map();let cachedReplyCharacters=0;
 export function replyDelay(text) {
-  const length = [...new Intl.Segmenter('ja', {granularity:'grapheme'}).segment(text)].length;
-  return 1000 + length * 100;
+  if(replyDelayCache.has(text))return replyDelayCache.get(text);
+  replySegmenter ||= new Intl.Segmenter('ja', {granularity:'grapheme'});
+  let length=0;for(const segment of replySegmenter.segment(text))length++;
+  const delay=1000+length*100;replyDelayCache.set(text,delay);cachedReplyCharacters+=text.length;
+  while(replyDelayCache.size>256||cachedReplyCharacters>100000){const oldest=replyDelayCache.keys().next().value;cachedReplyCharacters-=oldest.length;replyDelayCache.delete(oldest);}
+  return delay;
 }
 export function matchesRule(r, text, sharedAccount) {
   const mode=r.matchMode||'exact';

@@ -3,6 +3,7 @@ import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorl
 export const base = new URL('../',import.meta.url);
 export const url = path => new URL(path,base).href;
 let config, world, defaults, listeners = new Set(), ready, queue=Promise.resolve();
+let advancePending=null,advanceTimer=null,advancePaused=false,transactionError='';
 export const current=()=>world;
 export const scenario=()=>config;
 export const defaultScenario=()=>structuredClone(defaults);
@@ -13,7 +14,10 @@ export function showError(message) {
   el.textContent=message;
 }
 export function subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);}
-function emit(){for(const fn of listeners)fn();}
+function emit(){for(const fn of listeners)try{fn();}catch(error){console.error(error);showError('画面を更新できませんでした。ページを再読み込みしてください。');}}
+function scheduleAdvance(delay=250){clearTimeout(advanceTimer);if(document.hidden||advancePaused)return;advanceTimer=setTimeout(()=>{advance().catch(()=>{}).finally(()=>scheduleAdvance());},delay);}
+function pauseAdvance(){advancePaused=true;clearTimeout(advanceTimer);}
+function resumeAdvance(){advancePaused=false;if(document.hidden)return;try{world=read();emit();}catch(error){showError(error.message);}scheduleAdvance(0);}
 function read(){const raw=localStorage.getItem(WORLD_KEY);if(!raw)return world;let parsed;try{parsed=JSON.parse(raw);}catch{throw new Error('保存データが読み取れません。制作スタジオからバックアップを復元してください。');}if(!validateWorld(parsed))throw new Error('保存データの形式が不正です。制作スタジオから復元してください。');return parsed;}
 async function notifyNew(before,next){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
@@ -34,25 +38,42 @@ export async function boot(){
     const fresh=initialWorld(config,world.startedAt);let changed=false;if(!world.playerHandle){world.playerHandle=fresh.playerHandle;changed=true;}for(const [id,time] of Object.entries(fresh.randomAt))if(!(id in world.randomAt)){world.randomAt[id]=time;changed=true;}
     if(changed)localStorage.setItem(WORLD_KEY,JSON.stringify(world));
     if('serviceWorker' in navigator)navigator.serviceWorker.register(url('sw.js'),{scope:base.pathname}).catch(()=>{});
-    setInterval(()=>advance().catch(()=>{}),100);
-    window.addEventListener('storage',e=>{if(e.key===CONFIG_KEY){location.reload();return;}if(e.key===WORLD_KEY){try{world=read();emit();}catch(err){showError(err.message);}}});
-    window.addEventListener('pageshow',()=>advance().catch(()=>{}));
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)advance().catch(()=>{});});
-    await advance();return {config,world};
+    window.addEventListener('storage',e=>{if(e.key===CONFIG_KEY){location.reload();return;}if(e.key===WORLD_KEY){try{world=read();if(!document.hidden)emit();}catch(err){showError(err.message);}}});
+    window.addEventListener('pageshow',resumeAdvance);
+    window.addEventListener('pagehide',pauseAdvance);
+    document.addEventListener('visibilitychange',()=>document.hidden?pauseAdvance():resumeAdvance());
+    document.addEventListener('freeze',pauseAdvance);
+    document.addEventListener('resume',resumeAdvance);
+    await advance();scheduleAdvance();return {config,world};
   })();
   return ready;
 }
-export function transact(change){
-  const perform=async()=>{
-    const before=read();const next=await change(structuredClone(before),config,Date.now()+before.offset);
+export function transact(change,{idle=false}={}){
+  const perform=()=>{
+    if(idle&&(document.hidden||advancePaused))return null;
+    const before=read();const next=change(structuredClone(before),config,Date.now()+before.offset);
+    if(next&&typeof next.then==='function')throw new Error('進捗の変更中に非同期処理は実行できません。');
     if(!validateWorld(next))throw new Error('変更結果の検証に失敗しました。保存は行っていません。');
-    if(JSON.stringify(next)!==JSON.stringify(before)){localStorage.setItem(WORLD_KEY,JSON.stringify(next));world=next;emit();void notifyNew(before,next);}else world=before;
+    const serialized=JSON.stringify(next),changed=serialized!==JSON.stringify(before);
+    if(changed)localStorage.setItem(WORLD_KEY,serialized);
+    world=changed?next:before;return {before,next:world,changed};
+  };
+  const work=async()=>{
+    let result;
+    if(!navigator.locks)result=perform();
+    else if(idle)result=await navigator.locks.request(WORLD_KEY,{ifAvailable:true},lock=>lock?perform():null);
+    else {
+      const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),4000);
+      try{result=await navigator.locks.request(WORLD_KEY,{signal:controller.signal},perform);}catch(error){if(error.name==='AbortError')throw Error('別のタブの処理を待っています。作品のほかのタブを閉じて、もう一度お試しください。');throw error;}finally{clearTimeout(timeout);}
+    }
+    // Rendering and media updates must never hold the cross-tab storage lock.
+    if(result&&transactionError){const el=document.querySelector('#global-error');if(el?.textContent===transactionError)el.remove();transactionError='';}
+    if(result?.changed){emit();void notifyNew(result.before,result.next);}
     return world;
   };
-  const work=()=>navigator.locks?navigator.locks.request(WORLD_KEY,perform):perform();
-  queue=queue.catch(()=>{}).then(work).catch(err=>{showError(`保存できませんでした。${err.message}`);throw err;});return queue;
+  queue=queue.catch(()=>{}).then(work).catch(err=>{transactionError=`保存できませんでした。${err.message}`;showError(transactionError);throw err;});return queue;
 }
-export function advance(){return transact((w,c,n)=>tickWorld(w,c,n));}
+export function advance(){if(!advancePending)advancePending=transact((w,c,n)=>tickWorld(w,c,n),{idle:true}).finally(()=>{advancePending=null;});return advancePending;}
 export async function reset(){return transact((w,c)=>initialWorld(c,Date.now()));}
 export function withNewContent(c){if(c.recorder&&!c.recorder.profileAudio&&defaults?.recorder?.profileAudio)c.recorder.profileAudio=defaults.recorder.profileAudio;if(c.recorder?.serial==='EC-0917')c.recorder.serial='8042-991A';for(const key of ['salonArticles','salonQuestions'])if(c[key]===undefined)c[key]=structuredClone(defaults?.[key]||[]);return c;}
 export async function setConfig(next){withNewContent(next);if(JSON.stringify(next).length>2000000)throw new Error('設定全体は2MB以内にしてください。画像を小さくしてください。');const errors=validateConfig(next);if(errors.length)throw new Error(errors.join('\n'));localStorage.setItem(CONFIG_KEY,JSON.stringify(next));config=next;await transact((w)=>{const fresh=initialWorld(config,w.startedAt);for(const [id,t] of Object.entries(fresh.randomAt))if(!(id in w.randomAt))w.randomAt[id]=t;return w;});}
