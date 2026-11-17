@@ -8,15 +8,27 @@ async function handle(request,env){const path=new URL(request.url).pathname;
  if(request.method==='OPTIONS')return new Response(null,{status:204});
  if(path==='/public'&&request.method==='GET'){const row=await env.DB.prepare('SELECT published,published_revision FROM content WHERE id=1').first();return row?.published?json({config:JSON.parse(row.published),revision:row.published_revision}):json({error:'公開内容がありません。'},404);}
  if(env.PUBLIC_EDITING!=='true'&&!await authenticated(request,env))return json({error:'編集キーが違うか、接続の設定が完了していません。'},401);
+ if(path==='/publication'&&request.method==='GET'){const row=await env.DB.prepare('SELECT revision,published_revision FROM content WHERE id=1').first();return json(row);}
  if(path==='/draft'&&request.method==='GET'){const row=await env.DB.prepare('SELECT draft,revision,published_revision,updated_at FROM content WHERE id=1').first();return json({...row,config:row.draft?JSON.parse(row.draft):null,draft:undefined});}
  if(path==='/history'&&request.method==='GET'){const {results}=await env.DB.prepare('SELECT revision,published_at,title FROM history ORDER BY revision DESC LIMIT 20').all();return json(results);}
  if(/^\/history\/\d+$/.test(path)&&request.method==='GET'){const row=await env.DB.prepare('SELECT content FROM history WHERE revision=?').bind(Number(path.split('/').pop())).first();return row?json({config:JSON.parse(row.content)}):json({error:'履歴がありません。'},404);}
  if((path==='/draft'&&request.method==='PUT')||(path==='/publish'&&request.method==='POST')){
-  let data;try{data=await body(request);}catch(e){return json({error:e.message},400);}if(!Number.isInteger(data.revision)||data.revision<0)return json({error:'下書きを開き直してください。'},400);
+  let data;try{data=await body(request);}catch(e){return json({error:e.message},400);}if(!Number.isInteger(data.revision)||data.revision<0)return json({error:'公開画面を開き直してください。'},400);
   if(path==='/draft'){let errors;try{errors=validateConfig(data.config);}catch{errors=['設定の形式が不正です。'];}if(errors.length)return json({error:errors.join('\n')},400);const row=await env.DB.prepare("UPDATE content SET draft=?,revision=revision+1,updated_at=datetime('now') WHERE id=1 AND revision=? RETURNING revision").bind(JSON.stringify(data.config),data.revision).first();return row?json(row):json({error:'他の人が更新しました。あなたの下書きを残したまま保存を中止しました。最新の下書きを開いて変更を確認してください。'},409);}
   if(data.confirmPublish!==true)return json({error:'公開前の確認が必要です。'},400);
   if(data.title!==undefined&&(typeof data.title!=='string'||data.title.trim().length>80))return json({error:'変更名は80文字以内で入力してください。'},400);
   const title=(data.title||'').trim();
+  if(data.config!==undefined){
+   let errors;try{errors=validateConfig(data.config);}catch{errors=['設定の形式が不正です。'];}if(errors.length)return json({error:errors.join('\n')},400);
+   const content=JSON.stringify(data.config);
+   // The conditional update and history insert commit together; competing publishers cannot overwrite each other.
+   const result=await env.DB.batch([
+    env.DB.prepare("UPDATE content SET draft=?,published=?,revision=revision+1,published_revision=revision+1,updated_at=datetime('now') WHERE id=1 AND revision=? RETURNING revision").bind(content,content,data.revision),
+    env.DB.prepare("INSERT OR IGNORE INTO history(revision,content,published_at,title) SELECT revision,published,datetime('now'),? FROM content WHERE id=1 AND revision=? AND published=?").bind(title,data.revision+1,content),
+    env.DB.prepare('DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 20)')
+   ]);
+   return result[0].results.length?json(result[0].results[0]):json({error:'他の人が更新しました。手元の編集は残っています。公開履歴を確認し、この画面を開き直してから公開してください。'},409);
+  }
   const result=await env.DB.batch([env.DB.prepare("INSERT OR IGNORE INTO history(revision,content,published_at,title) SELECT revision,draft,datetime('now'),? FROM content WHERE id=1 AND revision=? AND draft IS NOT NULL").bind(title,data.revision),env.DB.prepare('UPDATE content SET published=draft,published_revision=revision WHERE id=1 AND revision=? AND draft IS NOT NULL RETURNING revision').bind(data.revision),env.DB.prepare('DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 20)')]);return result[1].results.length?json(result[1].results[0]):json({error:'下書きが更新されています。最新の内容を確認してから公開してください。'},409);
  }
  return json({error:'見つかりません。'},404);
