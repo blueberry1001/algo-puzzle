@@ -1,6 +1,6 @@
 import {assetRef} from './media-assets.js';
 import {publicContent,cloudEndpoint} from './cloud/client.js';
-import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,advanceDraft,migrateLegacy,normalizeHandles,hasDueDelivery } from './world.js';
+import { WORLD_KEY,CONFIG_KEY,allItems,initialWorld,validateConfig,validateWorld,advanceDraft,migrateLegacy,normalizeHandles,hasDueDelivery } from './world.js';
 import {withStorageLock,StorageLockTimeout} from './storage-lock.js';
 export const base = new URL('../',import.meta.url);
 const mediaEndpoint=await cloudEndpoint().catch(()=> '');
@@ -36,6 +36,44 @@ async function notifyNew(before,next){
     try{const registration=await navigator.serviceWorker?.getRegistration(base.pathname);if(registration)await registration.showNotification(n.title,{body:n.text.slice(0,140),tag:n.id,icon:url('assets/murmur.svg'),data:{url:url(n.route)}});else new Notification(n.title,{body:n.text.slice(0,140),tag:n.id});}catch{/* In-app notices remain available on unsupported browsers. */}
   }
 }
+function needsInitialization(saved){
+  return !saved.playerHandle || allItems(config).some(item=>item.randomMinutes && !(item.id in saved.randomAt));
+}
+
+async function loadPlayerProgress(){
+  if(localStorage.getItem(WORLD_KEY)){
+    try{
+      const saved=read();
+      if(!needsInitialization(saved)){world=saved;return;}
+    }catch{/* Recheck inside the storage lock before recovering. */}
+  }
+  await withStorageLock(navigator.locks,WORLD_KEY,()=>{
+    const raw=localStorage.getItem(WORLD_KEY);
+    let saved;
+    if(raw){
+      try{saved=read();}
+      catch{
+        localStorage.setItem(WORLD_KEY+':recovery',raw);
+        saved=initialWorld(config,Date.now());
+        showError('進捗を読み取れませんでした。元のデータはバックアップに保管しています。');
+      }
+    }else{
+      let legacy;
+      try{legacy=JSON.parse(localStorage.getItem('algo-puzzle:haru:v1'));}catch{}
+      saved=migrateLegacy(legacy,config,Date.now());
+    }
+    if(needsInitialization(saved)){
+      saved=structuredClone(saved);
+      const fresh=initialWorld(config,saved.startedAt);
+      saved.playerHandle ||= fresh.playerHandle;
+      for(const [id,time] of Object.entries(fresh.randomAt))saved.randomAt[id]??=time;
+    }
+    const serialized=JSON.stringify(saved);
+    if(raw!==serialized)localStorage.setItem(WORLD_KEY,serialized);
+    world=lastReadWorld=saved;
+    lastReadRaw=serialized;
+  });
+}
 export async function boot(){
   if(ready)return ready;
   ready=(async()=>{
@@ -43,11 +81,7 @@ export async function boot(){
     defaults=await publicContent(await response.json());config=defaults;
     const saved=localStorage.getItem(CONFIG_KEY);if(saved){try{const data=normalizeHandles(withNewContent(JSON.parse(saved)));if(!validateConfig(data).length){config=data;localStorage.setItem(CONFIG_KEY,JSON.stringify(data));}else showError('保存された設定に問題があるため、公開中の設定で起動しました。');}catch{showError('保存された設定を読み取れません。公開中の設定で起動しました。');}}
     const errors=validateConfig(config);if(errors.length)throw new Error(errors.join('\n'));
-    const raw=localStorage.getItem(WORLD_KEY);
-    if(raw){try{world=read();}catch{localStorage.setItem(WORLD_KEY+':recovery',raw);world=initialWorld(config,Date.now());localStorage.setItem(WORLD_KEY,JSON.stringify(world));showError('保存データの形式に問題があったため初期状態で起動しました。元データは recovery キーに保管しています。バックアップは制作スタジオから復元できます。');}}else{let legacy;try{legacy=JSON.parse(localStorage.getItem('algo-puzzle:haru:v1'));}catch{}world=migrateLegacy(legacy,config,Date.now());localStorage.setItem(WORLD_KEY,JSON.stringify(world));}
-    // Make new scheduled content deterministic after a scenario revision.
-    const fresh=initialWorld(config,world.startedAt);let changed=false;if(!world.playerHandle){world.playerHandle=fresh.playerHandle;changed=true;}for(const [id,time] of Object.entries(fresh.randomAt))if(!(id in world.randomAt)){world.randomAt[id]=time;changed=true;}
-    if(changed)localStorage.setItem(WORLD_KEY,JSON.stringify(world));
+    await loadPlayerProgress();
     if('serviceWorker' in navigator)navigator.serviceWorker.register(url('sw.js'),{scope:base.pathname}).catch(()=>{});
     window.addEventListener('storage',e=>{if(e.key===CONFIG_KEY){location.reload();return;}if(e.key===WORLD_KEY){try{world=read();if(!document.hidden)emit();}catch(err){showError(err.message);}}});
     window.addEventListener('pageshow',resumeAdvance);
