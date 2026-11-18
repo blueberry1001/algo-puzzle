@@ -1,6 +1,6 @@
 import {assetRef} from './media-assets.js';
 import {publicContent,cloudEndpoint} from './cloud/client.js';
-import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorld,migrateLegacy,normalizeHandles,hasDueDelivery } from './world.js';
+import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,advanceDraft,migrateLegacy,normalizeHandles,hasDueDelivery } from './world.js';
 import {withStorageLock,StorageLockTimeout} from './storage-lock.js';
 export const base = new URL('../',import.meta.url);
 const mediaEndpoint=await cloudEndpoint().catch(()=> '');
@@ -68,7 +68,7 @@ export function transact(change,{idle=false}={}){
     const before=read();const next=change(structuredClone(before),config,Date.now()+before.offset);
     if(next&&typeof next.then==='function')throw new Error('進捗の変更中に非同期処理は実行できません。');
     if(!validateWorld(next))throw new Error('変更結果の検証に失敗しました。保存は行っていません。');
-    const serialized=JSON.stringify(next),changed=serialized!==JSON.stringify(before);
+    const serialized=JSON.stringify(next),changed=serialized!==(before===lastReadWorld?lastReadRaw:JSON.stringify(before));
     if(changed)localStorage.setItem(WORLD_KEY,serialized);
     const refresh=changed||world!==before;world=changed?next:before;lastReadWorld=world;lastReadRaw=serialized;return {before,next:world,changed,refresh};
   };
@@ -84,7 +84,7 @@ export function transact(change,{idle=false}={}){
   };
   queue=queue.catch(()=>{}).then(work).catch(err=>{transactionError=`保存できませんでした。${err.message}`;showError(transactionError);throw err;});return queue;
 }
-export function advance(){if(!advancePending)advancePending=transact((w,c,n)=>tickWorld(w,c,n),{idle:true}).finally(()=>{advancePending=null;lastAdvanceAt=Date.now();});return advancePending;}
+export function advance(){if(!advancePending)advancePending=transact(advanceDraft,{idle:true}).finally(()=>{advancePending=null;lastAdvanceAt=Date.now();});return advancePending;}
 export async function reset(){return transact((w,c)=>initialWorld(c,Date.now()));}
 export function withNewContent(c){if(c.recorder&&!c.recorder.profileAudio&&defaults?.recorder?.profileAudio)c.recorder.profileAudio=defaults.recorder.profileAudio;if(c.recorder?.serial==='EC-0917')c.recorder.serial='8042-991A';for(const key of ['salonArticles','salonQuestions'])if(c[key]===undefined)c[key]=structuredClone(defaults?.[key]||[]);return c;}
 export async function setConfig(next){withNewContent(next);if(JSON.stringify(next).length>2000000)throw new Error('設定全体は2MB以内にしてください。画像を小さくしてください。');const errors=validateConfig(next);if(errors.length)throw new Error(errors.join('\n'));localStorage.setItem(CONFIG_KEY,JSON.stringify(next));config=next;await transact((w)=>{const fresh=initialWorld(config,w.startedAt);for(const [id,t] of Object.entries(fresh.randomAt))if(!(id in w.randomAt))w.randomAt[id]=t;return w;});}

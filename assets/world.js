@@ -68,8 +68,9 @@ let replySegmenter;
 const replyDelayCache=new Map();let cachedReplyCharacters=0;
 export function replyDelay(text) {
   if(replyDelayCache.has(text))return replyDelayCache.get(text);
-  replySegmenter ||= new Intl.Segmenter('ja', {granularity:'grapheme'});
-  let length=0;for(const segment of replySegmenter.segment(text))length++;
+  if(typeof Intl.Segmenter==='function')replySegmenter ||= new Intl.Segmenter('ja',{granularity:'grapheme'});
+  const characters=replySegmenter?replySegmenter.segment(text):text;
+  let length=0;for(const character of characters)length++;
   const delay=1000+length*100;replyDelayCache.set(text,delay);cachedReplyCharacters+=text.length;
   while(replyDelayCache.size>256||cachedReplyCharacters>100000){const oldest=replyDelayCache.keys().next().value;cachedReplyCharacters-=oldest.length;replyDelayCache.delete(oldest);}
   return delay;
@@ -90,11 +91,33 @@ export function hasDueDelivery(w,now) {
   if (w.pendingDms?.some(t=>t.at<=now)) return true;
   const fired=new Set(w.fired),heads=new Map(),last=new Map();
   for (const m of w.messages) if (m.role==='received') last.set(m.contact,m.at);
-  for (const task of w.scheduled) if (!fired.has(task.id)&&(!heads.has(task.contact)||task.at<heads.get(task.contact).at)) heads.set(task.contact,task);
+  for (const task of w.scheduled) if (!task.waitingFor&&!task.bodyAfter&&!fired.has(task.id)&&(!heads.has(task.contact)||task.at<heads.get(task.contact).at)) heads.set(task.contact,task);
   return [...heads.values()].some(task=>Math.max(task.at,last.has(task.contact)?last.get(task.contact)+replyDelay(task.text):task.at)<=now);
 }
 export function tickWorld(world,c,now) {
-  const w=clone(world);
+  return advanceDraft(clone(world),c,now);
+}
+
+// The caller owns this draft. Advance it without copying media and history again.
+export function advanceDraft(w,c,now) {
+  // Older versions could copy the pending parent's sentinel onto an independent
+  // reservation without recording a dependency. Recover the original keyword time
+  // from the first reply in the same rule execution whenever it is still available.
+  for(const task of w.scheduled){
+    if(task.at<Number.MAX_SAFE_INTEGER||task.waitingFor)continue;
+    const match=/^scheduled:(.+):part(\d+)(:.*)?$/.exec(task.id);
+    if(!match)continue;
+    const rule=c.rules.find(r=>r.id===match[1]);
+    const settings=rule&&ruleSchedules(rule)[Number(match[2])];
+    if(!settings||settings.afterPrevious||settings.afterDelivery)continue;
+    const first=w.scheduled.find(t=>t.id===`reply:${rule.id}:0${match[3]||''}`);
+    task.at=scheduleDue(settings,first?first.at-replyDelay(first.text):now);
+  }
+  // Older saves can have thousands of delivery markers from tasks already retired.
+  if(w.fired.length>4000){
+    const active=new Set(w.scheduled.flatMap(task=>[task.id,'typing:'+task.id]));
+    w.fired=w.fired.filter(id=>!/^(?:typing:)?(?:reply|scheduled):/.test(id)||active.has(id));
+  }
   if(w.shopPending?.length){
     const due=w.shopPending.filter(m=>m.at<=now);
     (w.shopChats||=[]).push(...due);
@@ -109,7 +132,7 @@ export function tickWorld(world,c,now) {
   w.pendingDms=w.pendingDms.filter(t=>t.at>now);
   w.dms=w.dms.slice(-500);
   for(const p of c.posts)if(p.deleteAtStep!=null&&w.step>=p.deleteAtStep&&!w.fired.includes(`deleted:${p.id}`))w.fired.push(`deleted:${p.id}`);
-  for(const t of w.scheduled)if(!w.fired.includes(t.id)&&now>=t.at-replyDelay(t.text)&&!w.fired.includes(`typing:${t.id}`))w.fired.push(`typing:${t.id}`);
+  for(const t of w.scheduled)if(!t.waitingFor&&!t.bodyAfter&&!w.fired.includes(t.id)&&now>=t.at-replyDelay(t.text)&&!w.fired.includes(`typing:${t.id}`))w.fired.push(`typing:${t.id}`);
   const visited=new Set();
   for(const task of [...w.scheduled].sort((a,b)=>a.at-b.at)) if(!task.bodyAfter&&!w.fired.includes(task.id)&&!visited.has(task.contact)) {
     visited.add(task.contact);
@@ -141,7 +164,10 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   if(chatBusy(w,now))return w;
   // Completed deliveries already live in the conversation history.
   const done=new Set(w.fired);
+  const completed=w.scheduled.filter(task=>done.has(task.id));
+  const retired=new Set(completed.flatMap(task=>[task.id,'typing:'+task.id]));
   w.scheduled=w.scheduled.filter(task=>!done.has(task.id));
+  w.fired=w.fired.filter(id=>!retired.has(id));
   w.messages.push({id:`sent-${now}-${w.messages.length}`,contact,role:'sent',text,at:now,...(sharedAccount?{sharedAccount}:{})});
   const candidates=c.rules.filter(r=>r.contact===contact&&(r.fromSteps||[r.fromStep]).includes(w.step));
   const rank={sharedAccount:-1,groups:0,exact:0,allContains:1,contains:2,notContains:3,any:4,fallback:5};
@@ -153,9 +179,39 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   if(w.step!==rule.toStep){w.step=rule.toStep;w.steps[w.step]=now;}
   let at=now;
   ruleReplies(rule).forEach((reply,i)=>{const body=timedText(reply,now);at+=replyDelay(body);w.scheduled.push({id:`reply:${rule.id}:${i}${suffix}`,kind:'reply',contact,...reply,text:body,at});});
-  let previousId;
-  ruleSchedules(rule).forEach((s,i)=>{const id=`scheduled:${rule.id}${i?':part'+i:''}${suffix}`,waiting=(s.afterDelivery||(s.afterPrevious&&at===Number.MAX_SAFE_INTEGER))&&i>0;const due=scheduleDue(s,s.afterPrevious&&i>0?at:now);const scheduledAt=waiting?Number.MAX_SAFE_INTEGER:Math.max(s.contact&&s.contact!==contact&&!s.afterPrevious?now:at,due)+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text));w.scheduled.push({id,contact:s.contact||contact,audios:replyAudios(s),videos:s.videos,image:s.image,images:s.images,advanceStep:s.advanceStep,text:timedText(s,now),...(i&&s.textWindow?.clock==='delivery'?{bodyAfter:previousId,bodyOptions:{text:s.text,textWindow:s.textWindow}}:{}),at:scheduledAt,...(waiting?{waitingFor:previousId,timing:s}:{})});previousId=id;at=scheduledAt;});
-  return tickWorld(w,c,now);
+  enqueueReservations(w,rule,contact,now,at,suffix);
+  return advanceDraft(w,c,now);
+}
+function enqueueReservations(world,rule,contact,sentAt,lastReplyAt,suffix){
+  let previous;
+  for(const [index,settings] of ruleSchedules(rule).entries()){
+    const recipient=settings.contact||contact;
+    const followsPlan=Boolean(previous&&settings.afterPrevious);
+    const waitsForDelivery=Boolean(previous&&(settings.afterDelivery||(followsPlan&&previous.waitingFor)));
+    const origin=followsPlan?previous.at:sentAt;
+    // Independent reservations must never inherit an unresolved delivery time.
+    const previousDue=previous&&!previous.waitingFor?previous.at:lastReplyAt;
+    const earliest=recipient!==contact&&!followsPlan?sentAt:previousDue;
+    const body=timedText(settings,sentAt);
+    const padding=settings.contact||settings.type==='tomorrow'?0:replyDelay(body);
+    const task={
+      id:`scheduled:${rule.id}${index?':part'+index:''}${suffix}`,
+      contact:recipient,text:body,image:settings.image,images:settings.images,
+      videos:settings.videos,audios:replyAudios(settings),advanceStep:settings.advanceStep,
+      at:waitsForDelivery?Number.MAX_SAFE_INTEGER:Math.max(earliest,scheduleDue(settings,origin))+padding
+    };
+    if(waitsForDelivery){
+      task.waitingFor=previous.id;
+      const {type,seconds,minutes,hour,timeWindow}=settings;
+      task.timing={type,seconds,minutes,hour,timeWindow};
+    }
+    if(previous&&settings.textWindow?.clock==='delivery'){
+      task.bodyAfter=previous.id;
+      task.bodyOptions={text:settings.text,textWindow:settings.textWindow};
+    }
+    world.scheduled.push(task);
+    previous=task;
+  }
 }
 export function unlockContact(world,c,id) {
   const contact=c.contacts.find(x=>x.id===id);
