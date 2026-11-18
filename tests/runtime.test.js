@@ -27,4 +27,9 @@ test('runtime polling stays bounded and releases the storage lock before renderi
   await assert.rejects(rt.transact(()=>{throw Error('failed update');}),/failed update/);
   await rt.transact(w=>{w.likes.push('recovered');return w;});assert.equal(rt.current().likes.length,21);assert.equal(document.querySelector('#global-error'),null);
   const snapshot=JSON.parse(stored.get('algo-puzzle:world:v2'));assert.equal(snapshot.likes.length,21);
+  // A background tab commits a delivery without a storage event reaching this tab.
+  snapshot.messages.push({id:'other',contact:'haru',role:'received',text:'届いた',at:Date.now(),audios:['media/a.mp3'],images:['media/a.png']});
+  stored.set('algo-puzzle:world:v2',JSON.stringify(snapshot));
+  const renders=renderLocks.length;await rt.advance();assert.equal(renderLocks.length,renders+1);
+  await rt.advance();assert.equal(renderLocks.length,renders+1);
 });

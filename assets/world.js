@@ -41,6 +41,14 @@ export function nextJstHour(now, hour) {
   if (due <= now) due += 24*HOUR;
   return due;
 }
+export const imagesOf=item=>item.images??(item.image?[item.image]:[]);
+function timedText(item,at){
+ const range=item.textWindow;
+ if(!range)return item.text;
+ const hour=new Date(at+9*HOUR).getUTCHours();
+ const inside=range.start<range.end?hour>=range.start&&hour<range.end:hour>=range.start||hour<range.end;
+ return inside?range.text:item.text;
+}
 export function scheduleDue(s,origin){
  const h=new Date(origin+9*HOUR).getUTCHours(),v=s.timeWindow;
  const match=v&&(v.startHour===v.endHour|| (v.startHour<v.endHour?h>=v.startHour&&h<v.endHour:h>=v.startHour||h<v.endHour));
@@ -75,9 +83,10 @@ export function matchesRule(r, text, sharedAccount) {
   if(mode==='notContains')return !ruleKeywords(r).some(k=>text.includes(k.trim()));
   return ['any','fallback','sharedAccount'].includes(mode) || ruleKeywords(r).some(k=>mode==='contains'?text.includes(k.trim()):text===k.trim());
 }
-export function pendingTyping(w,now=Date.now()+(w.offset||0)) {return w.scheduled.find(t=>!w.fired.includes(t.id)&&(t.kind==='reply'||now>=t.at-replyDelay(t.text)));}
+export function pendingTyping(w,now=Date.now()+(w.offset||0)) {return w.scheduled.find(t=>!t.bodyAfter&&!w.fired.includes(t.id)&&(t.kind==='reply'||now>=t.at-replyDelay(t.text)));}
 export function chatBusy(w,now) { return !!pendingTyping(w,now); }
 export function hasDueDelivery(w,now) {
+  if(w.shopPending?.some(t=>t.at<=now))return true;
   if (w.pendingDms?.some(t=>t.at<=now)) return true;
   const fired=new Set(w.fired),heads=new Map(),last=new Map();
   for (const m of w.messages) if (m.role==='received') last.set(m.contact,m.at);
@@ -86,6 +95,12 @@ export function hasDueDelivery(w,now) {
 }
 export function tickWorld(world,c,now) {
   const w=clone(world);
+  if(w.shopPending?.length){
+    const due=w.shopPending.filter(m=>m.at<=now);
+    (w.shopChats||=[]).push(...due);
+    w.shopChats=w.shopChats.slice(-500);
+    w.shopPending=w.shopPending.filter(m=>m.at>now);
+  }
   w.pendingDms ||= [];
   for(const task of w.pendingDms.filter(t=>t.at<=now)) {
     w.dms.push({...task,at:now});
@@ -96,16 +111,17 @@ export function tickWorld(world,c,now) {
   for(const p of c.posts)if(p.deleteAtStep!=null&&w.step>=p.deleteAtStep&&!w.fired.includes(`deleted:${p.id}`))w.fired.push(`deleted:${p.id}`);
   for(const t of w.scheduled)if(!w.fired.includes(t.id)&&now>=t.at-replyDelay(t.text)&&!w.fired.includes(`typing:${t.id}`))w.fired.push(`typing:${t.id}`);
   const visited=new Set();
-  for(const task of [...w.scheduled].sort((a,b)=>a.at-b.at)) if(!w.fired.includes(task.id)&&!visited.has(task.contact)) {
+  for(const task of [...w.scheduled].sort((a,b)=>a.at-b.at)) if(!task.bodyAfter&&!w.fired.includes(task.id)&&!visited.has(task.contact)) {
     visited.add(task.contact);
     const last=w.messages.filter(m=>m.contact===task.contact&&m.role==='received').at(-1);
     // Use actual delivery times: overdue replies must not arrive in a burst on reopening.
     const due=Math.max(task.at,last?last.at+replyDelay(task.text):task.at);
     if(due>now)continue;
-    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,audio:task.audio,audios:task.audios,videos:task.videos,invite:task.invite,at:now});
+    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,images:task.images,audio:task.audio,audios:task.audios,videos:task.videos,invite:task.invite,at:now});
     if(!w.contacts.includes(task.contact))w.contacts.push(task.contact);
     if(task.advanceStep&&w.step<100){w.step++;w.steps[w.step]=now;}
     w.fired.push(task.id);
+    for(const next of w.scheduled)if(next.bodyAfter===task.id){next.text=timedText(next.bodyOptions,now);delete next.bodyAfter;delete next.bodyOptions;}
     for(const next of w.scheduled)if(next.waitingFor===task.id){next.at=scheduleDue(next.timing,now);delete next.waitingFor;delete next.timing;}
     addNotice(w,task.id,c.contacts.find(x=>x.id===task.contact)?.name||'TALK',task.text,`?contact=${task.contact}`,now);
   }
@@ -123,6 +139,9 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   if(!text||!world.contacts.includes(contact)) return world;
   const w=tickWorld(world,c,now);
   if(chatBusy(w,now))return w;
+  // Completed deliveries already live in the conversation history.
+  const done=new Set(w.fired);
+  w.scheduled=w.scheduled.filter(task=>!done.has(task.id));
   w.messages.push({id:`sent-${now}-${w.messages.length}`,contact,role:'sent',text,at:now,...(sharedAccount?{sharedAccount}:{})});
   const candidates=c.rules.filter(r=>r.contact===contact&&(r.fromSteps||[r.fromStep]).includes(w.step));
   const rank={sharedAccount:-1,groups:0,exact:0,allContains:1,contains:2,notContains:3,any:4,fallback:5};
@@ -133,9 +152,9 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   if(!w.fired.includes(`rule:${rule.id}`))w.fired.push(`rule:${rule.id}`);
   if(w.step!==rule.toStep){w.step=rule.toStep;w.steps[w.step]=now;}
   let at=now;
-  ruleReplies(rule).forEach((reply,i)=>{at+=replyDelay(reply.text);w.scheduled.push({id:`reply:${rule.id}:${i}${suffix}`,kind:'reply',contact,...reply,at});});
+  ruleReplies(rule).forEach((reply,i)=>{const body=timedText(reply,now);at+=replyDelay(body);w.scheduled.push({id:`reply:${rule.id}:${i}${suffix}`,kind:'reply',contact,...reply,text:body,at});});
   let previousId;
-  ruleSchedules(rule).forEach((s,i)=>{const id=`scheduled:${rule.id}${i?':part'+i:''}${suffix}`,waiting=(s.afterDelivery||(s.afterPrevious&&at===Number.MAX_SAFE_INTEGER))&&i>0;const due=scheduleDue(s,s.afterPrevious&&i>0?at:now);const scheduledAt=waiting?Number.MAX_SAFE_INTEGER:Math.max(s.contact&&s.contact!==contact&&!s.afterPrevious?now:at,due)+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text));w.scheduled.push({id,contact:s.contact||contact,audios:replyAudios(s),videos:s.videos,image:s.image,advanceStep:s.advanceStep,text:s.text,at:scheduledAt,...(waiting?{waitingFor:previousId,timing:s}:{})});previousId=id;at=scheduledAt;});
+  ruleSchedules(rule).forEach((s,i)=>{const id=`scheduled:${rule.id}${i?':part'+i:''}${suffix}`,waiting=(s.afterDelivery||(s.afterPrevious&&at===Number.MAX_SAFE_INTEGER))&&i>0;const due=scheduleDue(s,s.afterPrevious&&i>0?at:now);const scheduledAt=waiting?Number.MAX_SAFE_INTEGER:Math.max(s.contact&&s.contact!==contact&&!s.afterPrevious?now:at,due)+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text));w.scheduled.push({id,contact:s.contact||contact,audios:replyAudios(s),videos:s.videos,image:s.image,images:s.images,advanceStep:s.advanceStep,text:timedText(s,now),...(i&&s.textWindow?.clock==='delivery'?{bodyAfter:previousId,bodyOptions:{text:s.text,textWindow:s.textWindow}}:{}),at:scheduledAt,...(waiting?{waitingFor:previousId,timing:s}:{})});previousId=id;at=scheduledAt;});
   return tickWorld(w,c,now);
 }
 export function unlockContact(world,c,id) {
@@ -201,7 +220,7 @@ export function validateConfig(c) {
     if(mode==='sharedAccount'&&!c.accounts.some(a=>a.id===r.sharedAccount))err('共有対象のアカウントを選択してください。');
     const replies=ruleReplies(r);
     if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
-    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);audio(reply.audio);if(reply.audios!==undefined){if(!Array.isArray(reply.audios)||reply.audios.length>20)err('音声は20件までです。');else reply.audios.forEach(audio);}if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.audios?.length&&!reply.videos?.length&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
+    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);audio(reply.audio);if(reply.audios!==undefined){if(!Array.isArray(reply.audios)||reply.audios.length>20)err('音声は20件までです。');else reply.audios.forEach(audio);}if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.images?.length&&!reply.audio&&!reply.audios?.length&&!reply.videos?.length&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
     // Also reject unsafe legacy fields, even when the new fields take precedence.
     asset(r.image);
     if(r.fromSteps!==undefined){if(!Array.isArray(r.fromSteps)||!r.fromSteps.length)err('必要な段階を指定してください。');else r.fromSteps.forEach(v=>step(v,r.id));}step(r.fromStep,r.id);step(r.toStep,r.id);if(r.name!==undefined)text(r.name,'ルール名');
@@ -212,7 +231,10 @@ export function validateConfig(c) {
   for(const a of c.contacts){text(a.name,'連絡先名');text(a.initial,'頭文字');step(a.unlockStep,a.id);if(!Array.isArray(a.intro)||!a.intro.every(x=>typeof x==='string'))err('初期メッセージが不正です。');}
   for(const item of [...c.accounts,...c.posts]){for(const key of ['tags','searchKeywords'])if(item[key]!==undefined&&(!Array.isArray(item[key])||item[key].length>(key==='searchKeywords'?2:50)||!item[key].every(v=>typeof v==='string'&&v.trim()&&v.length<=100)))err('管理タグ・検索キーワードが不正です。');}
   for(const a of c.contacts)if(!safeImage(a.icon))err('連絡先画像が不正です。');
-  for(const item of [...c.posts,...c.rules.flatMap(r=>[...ruleReplies(r),...ruleSchedules(r)])]){if(!item)continue;if(item.videos!==undefined&&(!Array.isArray(item.videos)||item.videos.length>20||!item.videos.every(v=>assetRef(v)&&/\.(mp4|webm)$/.test(v))))err('動画はMP4・WebMを20件まで添付できます。');if(item.audios!==undefined&&(!Array.isArray(item.audios)||item.audios.length>20||!item.audios.every(safeAudio)))err('音声の添付が不正です。');}
+  for(const item of [...c.posts,...c.rules.flatMap(r=>[...ruleReplies(r),...ruleSchedules(r)])]){if(!item)continue;
+    if(item.images!==undefined&&(!Array.isArray(item.images)||item.images.length>20||!item.images.every(v=>typeof v==='string'&&v&&safeImage(v))))err('画像は20件まで添付できます。');
+    if(item.textWindow){const v=item.textWindow;if(!['keyword','delivery'].includes(v.clock)||![v.start,v.end].every(n=>Number.isInteger(n)&&n>=0&&n<=23)||typeof v.text!=='string'||!v.text.trim()||v.text.length>20000)err('時間帯別の本文と時刻を確認してください。');}
+    if(item.videos!==undefined&&(!Array.isArray(item.videos)||item.videos.length>20||!item.videos.every(v=>assetRef(v)&&/\.(mp4|webm)$/.test(v))))err('動画はMP4・WebMを20件まで添付できます。');if(item.audios!==undefined&&(!Array.isArray(item.audios)||item.audios.length>20||!item.audios.every(safeAudio)))err('音声の添付が不正です。');}
   if(c.clubSettings!==undefined){if(!Array.isArray(c.clubSettings)||c.clubSettings.length!==1)err('会員ページ設定が不正です。');else{const settings=c.clubSettings[0];for(const key of ['numberKeyword','nameKeyword','displayNumber','displayName'])text(settings?.[key],key);if(!settings?.pages||typeof settings.pages!=='object')err('会員ページ本文が不正です。');else for(const page of Object.values(settings.pages)){text(page?.title,'会員ページ見出し');text(page?.text,'会員ページ本文');}}}
   const handles=new Set();
   for(const a of c.accounts){if(a.searchOnly!==undefined&&typeof a.searchOnly!=='boolean')err('検索限定の設定が不正です。');if(!/^[A-Za-z0-9_]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字・_の6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
@@ -254,6 +276,7 @@ export function validateWorld(w) {
   if(!w.reservations.every(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&typeof r.name==='string'&&Number.isInteger(r.start)&&r.start>=10&&r.start<=19&&[2,3,4].includes(r.hours)&&r.start+r.hours<=21&&Number.isInteger(r.people)&&r.people>=1&&r.people<=20&&Number.isFinite(r.price)))return false;
   if(!w.inquiries.every(r=>r&&typeof r.text==='string'&&typeof r.name==='string'&&Number.isFinite(r.at)))return false;
   if(w.shopChats!==undefined&&(!Array.isArray(w.shopChats)||w.shopChats.length>500||!w.shopChats.every(m=>m&&['goods','charm'].includes(m.product)&&['sent','received'].includes(m.role)&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at))))return false;
+  if([...w.messages,...w.scheduled].some(m=>m.images!==undefined&&(!Array.isArray(m.images)||m.images.length>20||!m.images.every(v=>typeof v==='string'&&v&&safeImage(v)))))return false;
   if([...w.messages,...w.scheduled].some(m=>m.videos!==undefined&&(!Array.isArray(m.videos)||m.videos.length>20||!m.videos.every(v=>assetRef(v)&&/\.(mp4|webm)$/.test(v)))))return false;
   if([...w.messages,...w.scheduled].some(m=>m.audios!==undefined&&(!Array.isArray(m.audios)||m.audios.length>20||!m.audios.every(safeAudio))))return false;
   if([...w.messages,...w.scheduled].some(m=>m.audio&&!safeAudio(m.audio)))return false;
@@ -284,4 +307,4 @@ export function socialPostAvailable(id,c,w,now=Date.now()+(w.offset||0)) {
  return true;
 }
 export function setTestStep(world,step,now){if(!Number.isInteger(step)||step<0||step>100)throw Error('段階は0〜100の整数で指定してください。');const w=clone(world);w.step=step;for(let n=0;n<=step;n++)w.steps[n]??=now;w.steps[step]=now;w.fired=w.fired.filter(id=>!id.startsWith('deleted:'));return w;}
-export function shopSend(world,c,product,text,now){text=text.trim().slice(0,1000);if(!text||!['goods','charm'].includes(product))return world;const w=clone(world);w.shopChats ||= [];w.shopChats.push({id:crypto.randomUUID(),product,role:'sent',text,at:now});const rule=(c.shopRules||[]).filter(r=>r.product==='all'||r.product===product).sort((a,b)=>({exact:0,contains:1,any:2}[a.matchMode]-{exact:0,contains:1,any:2}[b.matchMode])).find(r=>matchesRule(r,text));if(rule&&!w.fired.includes('shop:'+rule.id)){w.fired.push('shop:'+rule.id);w.shopChats.push({id:crypto.randomUUID(),product,role:'received',text:rule.reply,at:now});}w.shopChats=w.shopChats.slice(-500);return w;}
+export function shopSend(world,c,product,text,now){text=text.trim().slice(0,1000);if(world.shopPending?.some(m=>m.product===product)||!text||!['goods','charm'].includes(product))return world;const w=clone(world);w.shopChats ||= [];w.shopChats.push({id:crypto.randomUUID(),product,role:'sent',text,at:now});const rule=(c.shopRules||[]).filter(r=>r.product==='all'||r.product===product).sort((a,b)=>({exact:0,contains:1,any:2}[a.matchMode]-{exact:0,contains:1,any:2}[b.matchMode])).find(r=>matchesRule(r,text));if(rule&&!w.fired.includes('shop:'+rule.id)){w.fired.push('shop:'+rule.id);(w.shopPending||=[]).push({id:crypto.randomUUID(),product,role:'received',text:rule.reply,at:now+replyDelay(rule.reply)});}w.shopChats=w.shopChats.slice(-500);return w;}

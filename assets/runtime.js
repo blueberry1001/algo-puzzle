@@ -28,7 +28,8 @@ function reportBlockedDelivery(){
   blockedSince??=Date.now();
   if(Date.now()-blockedSince>=4000){const message='返信の処理が止まっています。作品のほかのタブを閉じて再読み込みしてください。進捗は残ります。';if(transactionError!==message||!document.querySelector('#global-error')){transactionError=message;showError(transactionError,{reload:true});}}
 }
-function read(){const raw=localStorage.getItem(WORLD_KEY);if(!raw)return world;let parsed;try{parsed=JSON.parse(raw);}catch{throw new Error('保存データが読み取れません。制作スタジオからバックアップを復元してください。');}if(!validateWorld(parsed))throw new Error('保存データの形式が不正です。制作スタジオから復元してください。');return parsed;}
+let lastReadRaw, lastReadWorld;
+function read(){const raw=localStorage.getItem(WORLD_KEY);if(!raw)return world;if(raw===lastReadRaw)return lastReadWorld;let parsed;try{parsed=JSON.parse(raw);}catch{throw new Error('保存データが読み取れません。制作スタジオからバックアップを復元してください。');}if(!validateWorld(parsed))throw new Error('保存データの形式が不正です。制作スタジオから復元してください。');lastReadRaw=raw;lastReadWorld=parsed;return parsed;}
 async function notifyNew(before,next){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
   for(const n of next.notices.filter(x=>!before.notices.some(b=>b.id===x.id))){
@@ -69,7 +70,7 @@ export function transact(change,{idle=false}={}){
     if(!validateWorld(next))throw new Error('変更結果の検証に失敗しました。保存は行っていません。');
     const serialized=JSON.stringify(next),changed=serialized!==JSON.stringify(before);
     if(changed)localStorage.setItem(WORLD_KEY,serialized);
-    world=changed?next:before;return {before,next:world,changed};
+    const refresh=changed||world!==before;world=changed?next:before;lastReadWorld=world;lastReadRaw=serialized;return {before,next:world,changed,refresh};
   };
   const work=async()=>{
     let result;
@@ -78,7 +79,7 @@ export function transact(change,{idle=false}={}){
     if(idle&&!result)reportBlockedDelivery();else if(result)blockedSince=null;
     // Rendering and media updates must never hold the cross-tab storage lock.
     if(result&&transactionError){const el=document.querySelector('#global-error');if(el?.textContent.startsWith(transactionError))el.remove();transactionError='';}
-    if(result?.changed){emit();void notifyNew(result.before,result.next);}
+    if(result?.refresh)emit();if(result?.changed)void notifyNew(result.before,result.next);
     return world;
   };
   queue=queue.catch(()=>{}).then(work).catch(err=>{transactionError=`保存できませんでした。${err.message}`;showError(transactionError);throw err;});return queue;

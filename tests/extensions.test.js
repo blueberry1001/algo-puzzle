@@ -9,7 +9,7 @@ const rule=(id,mode,keys,from,to,text)=>({id,contact:'haru',matchMode:mode,keywo
 test('stage-specific fallback repeats without advancing or resetting stage clock',()=>{
  const cfg=structuredClone(c);cfg.rules=[rule('ok','exact',['正解'],0,1,'正解です'),rule('wrong','fallback',[],0,0,'もう一度'),rule('wrong2','fallback',[],1,1,'次の問題です')];
  assert.deepEqual(validateConfig(cfg),[]);let w=chatSend(initialWorld(cfg,now),cfg,'haru','間違い',now);w=tickWorld(w,cfg,now+3000);w=chatSend(w,cfg,'haru','違う答え',now+4000);w=tickWorld(w,cfg,now+7000);
- assert.equal(w.step,0);assert.equal(w.steps[0],now);assert.equal(w.messages.filter(m=>m.text==='もう一度').length,2);assert.equal(new Set(w.scheduled.map(t=>t.id)).size,2);
+ assert.equal(w.step,0);assert.equal(w.steps[0],now);assert.equal(w.messages.filter(m=>m.text==='もう一度').length,2);assert.equal(new Set(w.messages.filter(m=>m.role==='received').map(t=>t.id)).size,2);
  w=chatSend(w,cfg,'haru','正解',now+8000);w=tickWorld(w,cfg,now+11000);w=chatSend(w,cfg,'haru','間違い',now+12000);w=tickWorld(w,cfg,now+15000);assert.equal(w.messages.at(-1).text,'次の問題です');
 });
 test('answer branches select distinct following keywords and replies',()=>{
