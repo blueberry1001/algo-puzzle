@@ -1,9 +1,10 @@
+import {assetRef} from './media-assets.js';
 // Pure, browser-independent scenario engine. All effects are persisted by runtime.js.
 import {safeAudio} from './audio-assets.js';
 export const WORLD_KEY = 'algo-puzzle:world:v2';
 export const CONFIG_KEY = 'algo-puzzle:scenario:v2';
 export const randomHandle = () => Array.from(crypto.getRandomValues(new Uint8Array(6 + crypto.getRandomValues(new Uint8Array(1))[0] % 11)), n => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[n % 62]).join('');
-export const safeImage = v => !v || (typeof v==='string' && ((/^media\/[a-zA-Z0-9_./-]+$/.test(v)&&!v.includes('..')) || /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) && v.length<=450000);
+export const safeImage = v => !v || assetRef(v) || (typeof v==='string' && ((/^media\/[a-zA-Z0-9_./-]+$/.test(v)&&!v.includes('..')) || /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) && v.length<=450000);
 const HOUR = 3600000;
 const clone = value => structuredClone(value);
 export function initialWorld(config, now = Date.now(), random = Math.random) {
@@ -39,6 +40,12 @@ export function nextJstHour(now, hour) {
   let due = Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),hour)-9*HOUR;
   if (due <= now) due += 24*HOUR;
   return due;
+}
+export function scheduleDue(s,origin){
+ const h=new Date(origin+9*HOUR).getUTCHours(),v=s.timeWindow;
+ const match=v&&(v.startHour===v.endHour|| (v.startHour<v.endHour?h>=v.startHour&&h<v.endHour:h>=v.startHour||h<v.endHour));
+ const choice=match?v:s;
+ return choice.type==='delay'?origin+(choice.seconds??choice.minutes*60)*1000:choice.type==='tomorrow'?tomorrowJstHour(origin,choice.hour):nextJstHour(origin,choice.hour);
 }
 function addNotice(w,id,title,text,route,at) {
   if (w.notices.some(n=>n.id===id)) return;
@@ -95,10 +102,11 @@ export function tickWorld(world,c,now) {
     // Use actual delivery times: overdue replies must not arrive in a burst on reopening.
     const due=Math.max(task.at,last?last.at+replyDelay(task.text):task.at);
     if(due>now)continue;
-    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,audio:task.audio,audios:task.audios,invite:task.invite,at:now});
+    w.messages.push({id:task.id,contact:task.contact,role:'received',text:task.text,image:task.image,audio:task.audio,audios:task.audios,videos:task.videos,invite:task.invite,at:now});
     if(!w.contacts.includes(task.contact))w.contacts.push(task.contact);
     if(task.advanceStep&&w.step<100){w.step++;w.steps[w.step]=now;}
     w.fired.push(task.id);
+    for(const next of w.scheduled)if(next.waitingFor===task.id){next.at=scheduleDue(next.timing,now);delete next.waitingFor;delete next.timing;}
     addNotice(w,task.id,c.contacts.find(x=>x.id===task.contact)?.name||'TALK',task.text,`?contact=${task.contact}`,now);
   }
   for(const p of c.posts) if(p.account==='mio'&&!c.accounts.find(a=>a.id===p.account)?.searchOnly&&visible(p,w,now)&&!w.fired.includes(p.id)) {
@@ -126,7 +134,8 @@ export function chatSend(world,c,contact,text,now,sharedAccount) {
   if(w.step!==rule.toStep){w.step=rule.toStep;w.steps[w.step]=now;}
   let at=now;
   ruleReplies(rule).forEach((reply,i)=>{at+=replyDelay(reply.text);w.scheduled.push({id:`reply:${rule.id}:${i}${suffix}`,kind:'reply',contact,...reply,at});});
-  ruleSchedules(rule).forEach((s,i)=>{const origin=s.afterPrevious&&i>0?at:now;const due=s.type==='delay'?origin+(s.seconds??s.minutes*60)*1000:s.type==='tomorrow'?tomorrowJstHour(origin,s.hour):nextJstHour(origin,s.hour);const scheduledAt=Math.max(s.contact&&s.contact!==contact&&!s.afterPrevious?now:at,due)+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text));w.scheduled.push({id:`scheduled:${rule.id}${i?':part'+i:''}${suffix}`,contact:s.contact||contact,audios:replyAudios(s),advanceStep:s.advanceStep,text:s.text,at:scheduledAt});at=scheduledAt;});
+  let previousId;
+  ruleSchedules(rule).forEach((s,i)=>{const id=`scheduled:${rule.id}${i?':part'+i:''}${suffix}`,waiting=(s.afterDelivery||(s.afterPrevious&&at===Number.MAX_SAFE_INTEGER))&&i>0;const due=scheduleDue(s,s.afterPrevious&&i>0?at:now);const scheduledAt=waiting?Number.MAX_SAFE_INTEGER:Math.max(s.contact&&s.contact!==contact&&!s.afterPrevious?now:at,due)+(s.contact||s.type==='tomorrow'?0:replyDelay(s.text));w.scheduled.push({id,contact:s.contact||contact,audios:replyAudios(s),videos:s.videos,image:s.image,advanceStep:s.advanceStep,text:s.text,at:scheduledAt,...(waiting?{waitingFor:previousId,timing:s}:{})});previousId=id;at=scheduledAt;});
   return tickWorld(w,c,now);
 }
 export function unlockContact(world,c,id) {
@@ -178,7 +187,7 @@ export function validateConfig(c) {
   if(!c.contacts.some(x=>x.id==='haru'))err('最初の連絡先 haru が必要です。');
   const text=(v,label)=>{if(typeof v!=='string'||v.length>20000)err(`${label}: 文字列が必要です（20,000文字以内）。`);};
   const step=(v,label)=>{if(!Number.isInteger(v)||v<0||v>100)err(`${label}: 段階は0〜100の整数です。`);};
-  const asset=(v)=>{if(v!==undefined&&v!==''&&(typeof v!=='string'||!/^media\/[a-zA-Z0-9_./-]+$/.test(v)||v.includes('..')))err('画像・音声は media/ 内の相対パスを指定してください。');};
+  const asset=(v)=>{if(v!==undefined&&v!==''&&(!safeImage(v)))err('画像・音声は media/ 内の相対パスを指定してください。');};
   const audio=(v)=>{if(v!==undefined&&v!==''&&!safeAudio(v))err('音声を添付するか、media/ 内の音声パスを指定してください。');};
   if(['blogs','news','diary'].some(key=>c[key].length===0))err('会話・投稿・ブログ・お知らせ・日記には最低1件必要です。');
   for(const r of c.rules){
@@ -192,16 +201,19 @@ export function validateConfig(c) {
     if(mode==='sharedAccount'&&!c.accounts.some(a=>a.id===r.sharedAccount))err('共有対象のアカウントを選択してください。');
     const replies=ruleReplies(r);
     if(!Array.isArray(replies)||!replies.length||replies.length>50)err('返信は1〜50通で指定してください。');
-    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);audio(reply.audio);if(reply.audios!==undefined){if(!Array.isArray(reply.audios)||reply.audios.length>20)err('音声は20件までです。');else reply.audios.forEach(audio);}if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.audios?.length&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
+    else for(const reply of replies){if(!reply||typeof reply!=='object'){err('返信の形式が不正です。');continue;}text(reply.text,'返信');asset(reply.image);audio(reply.audio);if(reply.audios!==undefined){if(!Array.isArray(reply.audios)||reply.audios.length>20)err('音声は20件までです。');else reply.audios.forEach(audio);}if(typeof reply.text==='string'&&!reply.text.trim()&&!reply.image&&!reply.audio&&!reply.audios?.length&&!reply.videos?.length&&!reply.invite)err('空の返信は送信できません。');if(reply.invite&&!c.contacts.some(a=>a.id===reply.invite))err('招待先が存在しません。');}
     // Also reject unsafe legacy fields, even when the new fields take precedence.
     asset(r.image);
     if(r.fromSteps!==undefined){if(!Array.isArray(r.fromSteps)||!r.fromSteps.length)err('必要な段階を指定してください。');else r.fromSteps.forEach(v=>step(v,r.id));}step(r.fromStep,r.id);step(r.toStep,r.id);if(r.name!==undefined)text(r.name,'ルール名');
     if(!c.contacts.some(a=>a.id===r.contact))err(`${r.id}: 連絡先が存在しません。`);
     if(r.schedules!==undefined&&(!Array.isArray(r.schedules)||r.schedules.length>30)){err('予約返信は30件までです。');continue;}
-    for(const schedule of ruleSchedules(r)){if(!schedule||typeof schedule!=='object'){err('予約返信の形式が不正です。');continue;}audio(schedule.audio);if(schedule.audios!==undefined){if(!Array.isArray(schedule.audios)||schedule.audios.length>20)err('音声は20件までです。');else schedule.audios.forEach(audio);}if(schedule.contact&&!c.contacts.some(a=>a.id===schedule.contact))err('予約返信の連絡先が存在しません。');for(const k of ['advanceStep','afterPrevious'])if(schedule[k]!==undefined&&typeof schedule[k]!=='boolean')err('予約返信の設定が不正です。');text(schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(schedule.type))err('予約の種類が不正です。');if(schedule.type==='delay'&&(!Number.isFinite(schedule.seconds??schedule.minutes*60)||(schedule.seconds??schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(schedule.type)&&(!Number.isInteger(schedule.hour)||schedule.hour<0||schedule.hour>23))err('時刻は0〜23です。');}
+    for(const schedule of ruleSchedules(r)){if(!schedule||typeof schedule!=='object'){err('予約返信の形式が不正です。');continue;}if(schedule.timeWindow){const v=schedule.timeWindow;if(![v.startHour,v.endHour].every(h=>Number.isInteger(h)&&h>=0&&h<=23)||!['delay','daily','tomorrow'].includes(v.type)||(v.type==='delay'?(!Number.isFinite(v.seconds)||v.seconds<0):(!Number.isInteger(v.hour)||v.hour<0||v.hour>23)))err('時間帯ごとの予約設定が不正です。');}audio(schedule.audio);if(schedule.audios!==undefined){if(!Array.isArray(schedule.audios)||schedule.audios.length>20)err('音声は20件までです。');else schedule.audios.forEach(audio);}if(schedule.contact&&!c.contacts.some(a=>a.id===schedule.contact))err('予約返信の連絡先が存在しません。');for(const k of ['advanceStep','afterPrevious'])if(schedule[k]!==undefined&&typeof schedule[k]!=='boolean')err('予約返信の設定が不正です。');text(schedule.text,'予約返信');if(!['delay','daily','tomorrow'].includes(schedule.type))err('予約の種類が不正です。');if(schedule.type==='delay'&&(!Number.isFinite(schedule.seconds??schedule.minutes*60)||(schedule.seconds??schedule.minutes*60)<0))err('遅延時間は0以上です。');if(['daily','tomorrow'].includes(schedule.type)&&(!Number.isInteger(schedule.hour)||schedule.hour<0||schedule.hour>23))err('時刻は0〜23です。');}
   }
   for(const a of c.contacts){text(a.name,'連絡先名');text(a.initial,'頭文字');step(a.unlockStep,a.id);if(!Array.isArray(a.intro)||!a.intro.every(x=>typeof x==='string'))err('初期メッセージが不正です。');}
   for(const item of [...c.accounts,...c.posts]){for(const key of ['tags','searchKeywords'])if(item[key]!==undefined&&(!Array.isArray(item[key])||item[key].length>(key==='searchKeywords'?2:50)||!item[key].every(v=>typeof v==='string'&&v.trim()&&v.length<=100)))err('管理タグ・検索キーワードが不正です。');}
+  for(const a of c.contacts)if(!safeImage(a.icon))err('連絡先画像が不正です。');
+  for(const item of [...c.posts,...c.rules.flatMap(r=>[...ruleReplies(r),...ruleSchedules(r)])]){if(!item)continue;if(item.videos!==undefined&&(!Array.isArray(item.videos)||item.videos.length>20||!item.videos.every(v=>assetRef(v)&&/\.(mp4|webm)$/.test(v))))err('動画はMP4・WebMを20件まで添付できます。');if(item.audios!==undefined&&(!Array.isArray(item.audios)||item.audios.length>20||!item.audios.every(safeAudio)))err('音声の添付が不正です。');}
+  if(c.clubSettings!==undefined){if(!Array.isArray(c.clubSettings)||c.clubSettings.length!==1)err('会員ページ設定が不正です。');else{const settings=c.clubSettings[0];for(const key of ['numberKeyword','nameKeyword','displayNumber','displayName'])text(settings?.[key],key);if(!settings?.pages||typeof settings.pages!=='object')err('会員ページ本文が不正です。');else for(const page of Object.values(settings.pages)){text(page?.title,'会員ページ見出し');text(page?.text,'会員ページ本文');}}}
   const handles=new Set();
   for(const a of c.accounts){if(a.searchOnly!==undefined&&typeof a.searchOnly!=='boolean')err('検索限定の設定が不正です。');if(!/^[A-Za-z0-9_]{6,16}$/.test(a.handle)||handles.has(String(a.handle).toLowerCase()))err('SNSのIDは重複しない英数字・_の6〜16文字です。');handles.add(String(a.handle).toLowerCase());if(a.id==='player')err('playerはプレイヤー専用IDです。');text(a.name,'アカウント名');text(a.handle,'ハンドル');text(a.bio,'自己紹介');text(a.initial,'頭文字');if(!safeImage(a.icon)||!safeImage(a.header))err('アカウント画像はmedia/内のパスまたは450KB以内のPNG・JPEG・WebPです。');}
   for(const t of c.threads){text(t.title,'スレッド名');if(!Array.isArray(t.comments)){err('comments は配列です。');continue;}for(const m of t.comments){if(!m||typeof m!=='object'){err('コメントの形式が不正です。');continue;}text(m.text,'コメント');text(m.uid,'ID');text(m.name,'投稿者');}}
@@ -234,7 +246,7 @@ export function validateWorld(w) {
   if(w.snsFirstOpenedAt!==undefined&&(!Number.isFinite(w.snsFirstOpenedAt)||Math.abs(w.snsFirstOpenedAt)>8e15))return false;
   if(!w.contacts.every(x=>typeof x==='string')||!w.fired.every(x=>typeof x==='string'))return false;
   for(const k of ['messages','posts','replies','dms'])if(!w[k].every(m=>m&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at)&&Math.abs(m.at)<8e15))return false;
-  if(!w.scheduled.every(m=>m&&typeof m.id==='string'&&typeof m.contact==='string'&&typeof m.text==='string'&&Number.isFinite(m.at)&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))&&(!m.invite||typeof m.invite==='string')&&(!m.kind||m.kind==='reply')))return false;
+  if(!w.scheduled.every(m=>m&&typeof m.id==='string'&&typeof m.contact==='string'&&typeof m.text==='string'&&Number.isFinite(m.at)&&(!m.image||safeImage(m.image))&&(!m.invite||typeof m.invite==='string')&&(!m.kind||m.kind==='reply')))return false;
   if(w.salonMember!=null&&(typeof w.salonMember.name!=='string'||!w.salonMember.name.trim()||w.salonMember.name.length>40||!Number.isFinite(w.salonMember.joined)))return false;
   if(w.member&&(!w.member.username||!w.member.number||typeof w.member.name!=='string'||typeof w.member.hash!=='string'||typeof w.member.salt!=='string'||!Number.isFinite(w.member.joined)))return false;
   if(!w.likes.every(x=>typeof x==='string')||!w.tickets.every(x=>typeof x==='string'))return false;
@@ -242,10 +254,11 @@ export function validateWorld(w) {
   if(!w.reservations.every(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&typeof r.name==='string'&&Number.isInteger(r.start)&&r.start>=10&&r.start<=19&&[2,3,4].includes(r.hours)&&r.start+r.hours<=21&&Number.isInteger(r.people)&&r.people>=1&&r.people<=20&&Number.isFinite(r.price)))return false;
   if(!w.inquiries.every(r=>r&&typeof r.text==='string'&&typeof r.name==='string'&&Number.isFinite(r.at)))return false;
   if(w.shopChats!==undefined&&(!Array.isArray(w.shopChats)||w.shopChats.length>500||!w.shopChats.every(m=>m&&['goods','charm'].includes(m.product)&&['sent','received'].includes(m.role)&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(m.at))))return false;
+  if([...w.messages,...w.scheduled].some(m=>m.videos!==undefined&&(!Array.isArray(m.videos)||m.videos.length>20||!m.videos.every(v=>assetRef(v)&&/\.(mp4|webm)$/.test(v)))))return false;
   if([...w.messages,...w.scheduled].some(m=>m.audios!==undefined&&(!Array.isArray(m.audios)||m.audios.length>20||!m.audios.every(safeAudio))))return false;
   if([...w.messages,...w.scheduled].some(m=>m.audio&&!safeAudio(m.audio)))return false;
   if(w.scheduled.some(m=>m.advanceStep!==undefined&&typeof m.advanceStep!=='boolean'))return false;
-  if(!w.messages.every(m=>['sent','received'].includes(m.role)&&typeof m.contact==='string'&&(!m.image||(/^media\/[a-zA-Z0-9_./-]+$/.test(m.image)&&!m.image.includes('..')))))return false;
+  if(!w.messages.every(m=>['sent','received'].includes(m.role)&&typeof m.contact==='string'&&(!m.image||safeImage(m.image))))return false;
   return true;
 }
 
@@ -271,4 +284,4 @@ export function socialPostAvailable(id,c,w,now=Date.now()+(w.offset||0)) {
  return true;
 }
 export function setTestStep(world,step,now){if(!Number.isInteger(step)||step<0||step>100)throw Error('段階は0〜100の整数で指定してください。');const w=clone(world);w.step=step;for(let n=0;n<=step;n++)w.steps[n]??=now;w.steps[step]=now;w.fired=w.fired.filter(id=>!id.startsWith('deleted:'));return w;}
-export function shopSend(world,c,product,text,now){text=text.trim().slice(0,1000);if(!text||!['goods','charm'].includes(product))return world;const w=clone(world);w.shopChats ||= [];w.shopChats.push({id:crypto.randomUUID(),product,role:'sent',text,at:now});const rule=(c.shopRules||[]).filter(r=>r.product==='all'||r.product===product).sort((a,b)=>({exact:0,contains:1,any:2}[a.matchMode]-{exact:0,contains:1,any:2}[b.matchMode])).find(r=>matchesRule(r,text));if(rule)w.shopChats.push({id:crypto.randomUUID(),product,role:'received',text:rule.reply,at:now});w.shopChats=w.shopChats.slice(-500);return w;}
+export function shopSend(world,c,product,text,now){text=text.trim().slice(0,1000);if(!text||!['goods','charm'].includes(product))return world;const w=clone(world);w.shopChats ||= [];w.shopChats.push({id:crypto.randomUUID(),product,role:'sent',text,at:now});const rule=(c.shopRules||[]).filter(r=>r.product==='all'||r.product===product).sort((a,b)=>({exact:0,contains:1,any:2}[a.matchMode]-{exact:0,contains:1,any:2}[b.matchMode])).find(r=>matchesRule(r,text));if(rule&&!w.fired.includes('shop:'+rule.id)){w.fired.push('shop:'+rule.id);w.shopChats.push({id:crypto.randomUUID(),product,role:'received',text:rule.reply,at:now});}w.shopChats=w.shopChats.slice(-500);return w;}

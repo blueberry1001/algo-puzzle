@@ -132,3 +132,9 @@ button.social-self{width:100%;border:0;background:transparent;color:inherit;text
 .audio-attachment>.icon-button{flex:none}.audio-paths{font-size:12px;color:#66736d}.audio-paths summary{cursor:pointer;padding:6px 0}.audio-paths .field{margin-top:8px}
 .audio-upload-status{overflow-wrap:anywhere}.modal progress{width:100%;accent-color:#253b50}
 .global-error .recovery-button{margin:6px 0 0 12px;min-height:44px;border-color:currentColor;color:inherit}
+
+.message-copy{font-size:11px;padding:4px 6px;min-height:28px;align-self:end;margin:0 4px;background:transparent;white-space:nowrap}.message.received .message-content{max-width:calc(100% - 105px)}
+.salon-article .article-body,.salon-article p,.salon-content p{line-height:1.9}
+.fiction-notice{font-size:10px;line-height:1.6;color:#777;text-align:center;padding:20px 16px;margin:0 auto;max-width:1000px}
+
+.salon-reading .article-body,.salon-reading .article-body p{line-height:1.9}.club-secret{text-align:center;padding:24px}.club-secret button{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer;min-width:24px;min-height:32px}

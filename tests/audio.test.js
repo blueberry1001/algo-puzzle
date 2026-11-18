@@ -103,3 +103,13 @@ test('upload rejects oversize/invalid input, respects auth, and caps storage wit
   assert.equal((await call('/audio',{method:'OPTIONS',headers:{Origin:'https://player.test'}})).headers.get('Access-Control-Allow-Headers').includes('X-Audio-Name'),true);
   assert.equal((await upload(mp3(),'voice.mp3',{Origin:'https://untrusted.test'})).status,403);
 });
+
+test('image/video uploads are separate references with cached range delivery',async()=>{
+ const {call}=setup();
+ const bytes=new Uint8Array([82,73,70,70,12,0,0,0,87,69,66,80,86,80,56,32,0,0,0,0]);
+ const uploaded=await call('/media',{method:'POST',headers:{'X-Audio-Name':'test.webp'},body:bytes});assert.equal(uploaded.status,201);
+ const {ref}=await uploaded.json();assert.match(ref,/^asset:[a-f0-9]{64}\.webp$/);
+ const response=await call('/media/'+ref.slice(6),{headers:{Range:'bytes=0-3'}});assert.equal(response.status,206);assert.equal(response.headers.get('Content-Type'),'image/webp');assert.deepEqual(new Uint8Array(await response.arrayBuffer()),bytes.slice(0,4));
+ assert.equal((await call('/media/'+ref.slice(6).replace('.webp','.mp4'))).status,404);
+ assert.equal((await call('/media',{method:'POST',headers:{'X-Audio-Name':'bad.webp'},body:'<script>bad</script>'})).status,400);
+});

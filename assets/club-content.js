@@ -1,0 +1,2 @@
+export const memberSections=[['members','会員ページ'],['diary','マネージャー日記'],['activity','活動記録'],['gallery','フォトギャラリー'],['tickets','公演・チケット情報'],['history','イベント参加記録'],['profile','会員情報']];
+export function clubSettings(c){return c.clubSettings?.[0]||{numberKeyword:'',nameKeyword:'',displayNumber:'',displayName:'',pages:Object.fromEntries(memberSections.map(([id,title])=>[id,{title,text:id==='members'?'会員限定コンテンツをご覧いただけます。':''}]))};}

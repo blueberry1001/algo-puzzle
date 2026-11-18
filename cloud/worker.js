@@ -8,8 +8,10 @@ async function handle(request,env){const path=new URL(request.url).pathname;
  if(path==='/access'&&request.method==='GET')return json({publicEditing:env.PUBLIC_EDITING==='true'});
  if(request.method==='OPTIONS')return new Response(null,{status:204});
  if(/^\/audio\/[a-f0-9]{64}\.mp3$/.test(path)&&['GET','HEAD'].includes(request.method))return serveAudio(request,path.split('/')[2].slice(0,-4),env);
+ if(/^\/media\/[a-f0-9]{64}\.(webp|png|jpg|mp4|webm)$/.test(path)&&['GET','HEAD'].includes(request.method)){const [id,ext]=path.split('/')[2].split('.');return serveAudio(request,id,env,ext);}
  if(path==='/public'&&request.method==='GET'){const row=await env.DB.prepare('SELECT published,published_revision FROM content WHERE id=1').first();return row?.published?json({config:JSON.parse(row.published),revision:row.published_revision}):json({error:'公開内容がありません。'},404);}
  if(env.PUBLIC_EDITING!=='true'&&!await authenticated(request,env))return json({error:'編集キーが違うか、接続の設定が完了していません。'},401);
+ if(path==='/media'&&request.method==='POST')return uploadAudio(request,env,true);
  if(path==='/audio'&&request.method==='POST')return uploadAudio(request,env);
  if(/^\/audio\/[a-f0-9]{64}\/info$/.test(path)&&request.method==='GET')return audioInfo(path.split('/')[2],env);
  if(path==='/publication'&&request.method==='GET'){const row=await env.DB.prepare('SELECT revision,published_revision FROM content WHERE id=1').first();return json(row);}

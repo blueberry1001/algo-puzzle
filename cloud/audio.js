@@ -1,3 +1,4 @@
+import {mediaType,mediaMime} from '../assets/media-assets.js';
 import {MAX_AUDIO_BYTES,isMp3} from '../assets/audio-assets.js';
 import {Buffer} from 'node:buffer';
 
@@ -5,13 +6,13 @@ import {Buffer} from 'node:buffer';
 export const AUDIO_CHUNK_BYTES = 500_000;
 export const AUDIO_STORAGE_BYTES = 150_000_000;
 const json = (data,status=200) => Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
-const info = row => ({ref:`audio:${row.id}`,name:row.name,size:row.size});
+const info = row => ({ref:row.name.startsWith('asset.')?`asset:${row.id}.${row.name.split('.').pop()}`:`audio:${row.id}`,name:row.name,size:row.size});
 
-export async function uploadAudio(request,env) {
+export async function uploadAudio(request,env,media=false) {
   let name;
   try { name = decodeURIComponent(request.headers.get('X-Audio-Name') || '').split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g,'').trim(); }
   catch { return json({error:'ファイル名を読み取れません。'},400); }
-  if (!name || name.length > 200 || !/\.mp3$/i.test(name)) return json({error:'MP3ファイルを選んでください。'},400);
+  if (!name || name.length > 200 || !(media?/\.(png|jpe?g|webp|mp4|webm)$/i:/\.mp3$/i).test(name)) return json({error:'MP3ファイルを選んでください。'},400);
   if (Number(request.headers.get('Content-Length')) > MAX_AUDIO_BYTES) return json({error:'音声は1つ10MBまでです。'},413);
   const reader = request.body?.getReader();
   if (!reader) return json({error:'ファイルがありません。'},400);
@@ -25,7 +26,9 @@ export async function uploadAudio(request,env) {
   }
   const bytes = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk,offset); offset += chunk.length; }
-  if (!isMp3(bytes)) return json({error:'MP3として読み取れません。音声をMP3形式で書き出し直してください。'},400);
+  const kind=media?mediaType(bytes):null;
+  if (media ? !kind : !isMp3(bytes)) return json({error:'拡張子はMP3ですが、中身がMP3形式ではありません。ファイル名の変更ではなく、音声ソフトでMP3に変換してください。'},400);
+  if(media)name='asset.'+kind;
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
   const id = Array.from(hash,b => b.toString(16).padStart(2,'0')).join('');
   const existing = await env.DB.prepare('SELECT id,name,size FROM audio_files WHERE id=?').bind(id).first();
@@ -55,10 +58,11 @@ export function byteRange(value,size) {
   return Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && start <= end && start < size ? {start,end,partial:true} : null;
 }
 
-export async function serveAudio(request,id,env) {
-  const row = await env.DB.prepare('SELECT size FROM audio_files WHERE id=?').bind(id).first();
+export async function serveAudio(request,id,env,extension=null) {
+  const row = await env.DB.prepare('SELECT size,name FROM audio_files WHERE id=?').bind(id).first();
   if (!row) return json({error:'音声が見つかりません。'},404);
-  const headers = {'Content-Type':'audio/mpeg','Accept-Ranges':'bytes','Cache-Control':'public, max-age=31536000, immutable','ETag':`"${id}"`,'Content-Disposition':'inline; filename="audio.mp3"'};
+  if(extension && row.name!=='asset.'+extension)return json({error:'ファイルが見つかりません。'},404);
+  const headers = {'Content-Type':extension?mediaMime[extension]:'audio/mpeg','Accept-Ranges':'bytes','Cache-Control':'public, max-age=31536000, immutable','ETag':`"${id}"`,'Content-Disposition':'inline; filename="audio.mp3"'};
   if (request.headers.get('If-None-Match') === headers.ETag) return new Response(null,{status:304,headers});
   const ifRange = request.headers.get('If-Range');
   const range = byteRange(request.method === 'HEAD' || (ifRange && ifRange !== headers.ETag) ? null : request.headers.get('Range'),row.size);

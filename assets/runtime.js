@@ -1,8 +1,10 @@
-import {publicContent} from './cloud/client.js';
+import {assetRef} from './media-assets.js';
+import {publicContent,cloudEndpoint} from './cloud/client.js';
 import { WORLD_KEY,CONFIG_KEY,initialWorld,validateConfig,validateWorld,tickWorld,migrateLegacy,normalizeHandles,hasDueDelivery } from './world.js';
 import {withStorageLock,StorageLockTimeout} from './storage-lock.js';
 export const base = new URL('../',import.meta.url);
-export const url = path => new URL(path,base).href;
+const mediaEndpoint=await cloudEndpoint().catch(()=> '');
+export const url = path => assetRef(path)?(mediaEndpoint?mediaEndpoint+'/media/'+path.slice(6):new URL('media/'+path.slice(6),base).href):new URL(path,base).href;
 let config, world, defaults, listeners = new Set(), ready, queue=Promise.resolve();
 let advancePending=null,advanceTimer=null,advancePaused=false,transactionError='',blockedSince=null,lastAdvanceAt=0;
 export const current=()=>world;

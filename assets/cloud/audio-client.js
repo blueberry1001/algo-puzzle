@@ -12,7 +12,7 @@ export async function audioName(ref) {
 export async function uploadAudio(file,signal) {
   if (!/\.mp3$/i.test(file.name)) throw Error('MP3ファイルを選んでください。');
   if (file.size > MAX_AUDIO_BYTES) throw Error('音声は1つ10MBまでです。');
-  if (!isMp3(new Uint8Array(await file.arrayBuffer()))) throw Error('MP3として読み取れません。音声をMP3形式で書き出し直してください。');
+  if (!isMp3(new Uint8Array(await file.arrayBuffer()))) throw Error('拡張子はMP3ですが、中身がMP3形式ではありません。ファイル名の変更ではなく、音声ソフトでMP3に変換してください。');
   if (signal.aborted) throw new DOMException('Aborted','AbortError');
   const endpoint = await cloudEndpoint();
   if (!endpoint) throw Error('音声の添付には共通保存先の接続が必要です。');
