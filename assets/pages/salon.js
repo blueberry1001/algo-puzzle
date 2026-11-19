@@ -1,3 +1,4 @@
+import {salonBody} from '../inline-content.js';
 import {current,scenario,transact,subscribe,url} from '../runtime.js';
 import {esc,link,para,available,photo,onForm,footer} from '../ui.js';
 const app=document.querySelector('#app'),params=new URLSearchParams(location.search);
@@ -12,7 +13,7 @@ function render(){
  }else{
   const list=available(scenario()[view==='questions'?'salonQuestions':'salonArticles']||[]),selected=list.find(a=>a.id===id);
   const heading=view==='questions'?'質問コーナー':'会員限定記事';
-  content=id?selected?`<article class="salon-reading">${link('salon/?view='+view,'一覧に戻る','back-link')}<h1>${esc(selected.title)}</h1>${selected.image?photo(selected.image,selected.title,'article-photo'):''}<div class="article-body">${para(selected.text)}</div></article>`:`<section class="salon-reading"><h1>この記事はまだ公開されていません</h1>${link('salon/?view='+view,'一覧に戻る','text-link')}</section>`:`<section class="salon-index"><div class="salon-index-heading"><h1>${heading}</h1><p>${esc(member.name)}さんのメンバーズページ</p></div>${list.length?list.map(a=>link(`salon/?view=${view}&id=${encodeURIComponent(a.id)}`,`<div><h2>${esc(a.title)}</h2><p>${esc(a.text.slice(0,90))}</p></div><span aria-hidden="true">→</span>`,'salon-entry')).join(''):'<p>公開中の記事はありません。</p>'}</section>`;
+  content=id?selected?`<article class="salon-reading">${link('salon/?view='+view,'一覧に戻る','back-link')}<h1>${esc(selected.title)}</h1>${selected.image?photo(selected.image,selected.title,'article-photo'):''}<div class="article-body">${salonBody(selected.text)}</div></article>`:`<section class="salon-reading"><h1>この記事はまだ公開されていません</h1>${link('salon/?view='+view,'一覧に戻る','text-link')}</section>`:`<section class="salon-index"><div class="salon-index-heading"><h1>${heading}</h1><p>${esc(member.name)}さんのメンバーズページ</p></div>${list.length?list.map(a=>link(`salon/?view=${view}&id=${encodeURIComponent(a.id)}`,`<div><h2>${esc(a.title)}</h2><p>${esc(a.text.replace(/\{\{image:asset:[a-f0-9]{64}\.(?:webp|jpg|png)\}\}/g,'').trim().slice(0,90))}</p></div><span aria-hidden="true">→</span>`,'salon-entry')).join(''):'<p>公開中の記事はありません。</p>'}</section>`;
  }
  app.innerHTML=`<div class="salon-shell"><header class="salon-header">${link('salon/','Hotaru’s<span>Talent Management Labo</span>','salon-logo')}<nav aria-label="ページ切替">${[['articles','会員限定記事'],['questions','質問コーナー'],['join','入会ページ']].map(([v,t])=>link('salon/?view='+v,t,view===v?'active':'')).join('')}</nav></header><main>${content}</main>${footer('Hotaru’s Talent Management Labo')}</div>`;
  onForm('salon-join',d=>{if(!d.name.trim())throw new Error('お名前を入力してください。');pendingName=d.name.trim();render();});

@@ -1,3 +1,4 @@
+import {clubSettings} from '../club-content.js';
 import {imagesOf} from '../world.js';
 import {videosHTML,keepVideos} from './studio-media.js';
 import {audioPlayer,keepAudioPlayers} from '../audio-player.js';
@@ -5,6 +6,16 @@ import {current,scenario,clock,transact,subscribe,reset,requestNotifications,url
 import {chatSend,unlockContact,chatBusy,pendingTyping,replyAudios} from '../world.js';
 import {esc,icon,avatar,link,photo,onForm,action,toast,confirmAction,noticePanel,textLinks} from '../ui.js';
 const app=document.querySelector('#app');const params=new URLSearchParams(location.search);let contact=params.get('contact')||'haru';let mobileList=false;let draft='';let renderedSignature='',renderedConfig;
+if(params.has('clubInvite')){
+ const id=params.get('clubInvite');
+ await transact((w,c)=>{
+   const pages=clubSettings(c).pages||{};
+   const offered=Object.values(pages).some(page=>page.text?.includes('{{contact:'+id+'}}'));
+   if(w.signedIn&&w.member&&offered&&c.contacts.some(person=>person.id===id)&&!w.contacts.includes(id))w.contacts.push(id);
+   return w;
+ });
+ if(current().contacts.includes(id))contact=id;
+}
 if(params.has('add')){await transact((w,c)=>unlockContact(w,c,params.get('add')));contact=params.get('add');}
 if(!current().contacts.includes(contact))contact='haru';
 let composing=false;

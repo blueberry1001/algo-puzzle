@@ -138,3 +138,9 @@ button.social-self{width:100%;border:0;background:transparent;color:inherit;text
 .fiction-notice{font-size:10px;line-height:1.6;color:#777;text-align:center;padding:20px 16px;margin:0 auto;max-width:1000px}
 
 .salon-reading .article-body,.salon-reading .article-body p{line-height:1.9}.club-secret{text-align:center;padding:24px}.club-secret button{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer;min-width:24px;min-height:32px}
+.social-post .post-actions .reply-post-link{font-size:18px;font-weight:700;line-height:1.3;gap:6px}
+.spin-header-logo{display:block;width:90px;height:50px;object-fit:contain}
+.club-hero .spin-art{object-fit:contain;width:48%;right:2%;height:100%;object-position:center}
+.club-hero:has(.spin-art){background:#fff8fb}.club-hero:has(.spin-art)::after{pointer-events:none;display:none}
+.salon-inline-image{display:block;max-width:100%;height:auto;margin:1.25em auto}
+@media(max-width:760px){.club-hero .spin-art{position:relative;width:100%;right:auto;height:200px}}
